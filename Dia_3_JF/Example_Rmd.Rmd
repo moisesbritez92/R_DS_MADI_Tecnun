@@ -1,0 +1,71 @@
+---
+title: "Exercises of Data Science"
+author: "Juan A. Ferrer"
+date: "29 de septiembre de 2025"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+
+START_DIR <-"G:/Mi unidad/Data Science/2023_2024/Classes/Day 3"
+setwd(START_DIR)
+```
+```{r packages, echo=FALSE}
+# Install packages
+pkgsNeeded <- c('ggplot2','viridis')
+
+pkgsInstalled <-  pkgsNeeded %in% rownames(installed.packages())
+if (length(pkgsNeeded[!pkgsInstalled]) > 0){
+  install.packages(pkgsNeeded[!pkgsInstalled], dependencies = T, repos = "https://cloud.r-project.org")
+}
+
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(viridis))
+
+```
+
+# Exercise about US crimen database
+
+Load the US crimen database. To do so, we can use the **read.csv** function.
+
+Using the function **head** allow us to quickly inspect the dataframe.
+
+```{r data, echo=TRUE}
+# Loading data
+data <- read.csv('data/CrimeUS.csv', header = T, sep = ',', stringsAsFactors = F)
+head(data)
+```
+Once we have the data loaded, we need to preprocess the data. We can examine the data and observe that the year column is a numeric column, but we are interested in this column as a factor. A factor variable is a nummerical (categorical) variable, but the user can only see the labels.
+
+```{r PROCESSING, echo=TRUE}
+# Convert years to factor
+data$year <- factor(data$year, levels = unique(data$year))
+
+```
+
+### Exercise 1: Generate a heatmap with the number of robberies by year and state.
+
+Now we can create the same heatmap usig `ggplot`. The **ggplot2** package is one of the main tools for the visualization of datasets. You can create the heatmap using `ggplot + geom_tile`.
+
+Use also:
+* `theme_minimal()` will change the theme of the image
+* `coord_fixed(ratio = 1, expand = T)` will scale both axis
+* `scale_y_discrete(expand = expansion(mult = c(0.01,0.01)))` will scale y axis
+* `scale_fill_gradientn(colours = inferno(256))` change the fill with **viridis** package.
+
+```{r heatmap, echo=TRUE}
+hm1 <- ggplot(data = data, aes(x = state, y = year, fill = robbery)) + geom_tile() +
+  theme_minimal() + coord_fixed(ratio = 1, expand = T) + 
+  scale_y_discrete(expand = expansion(mult = c(0.01,0.01))) +
+  scale_fill_gradientn(colours = inferno(256)) +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank(), 
+        legend.title = element_blank(), plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(hjust = 0.9, vjust = 0.9, angle = 55), 
+        axis.text.y = element_text(hjust = 0.9)) + 
+  ggtitle('Number of robberies by state and year')
+hm1
+```

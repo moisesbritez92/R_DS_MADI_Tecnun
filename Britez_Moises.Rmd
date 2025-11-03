@@ -1,0 +1,227 @@
+---
+title: ""
+output: 
+  pdf_document:
+    includes:
+      in_header: header.tex
+    keep_tex: true
+geometry: margin=1in
+---
+
+\thispagestyle{firstpage}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Asignatura: Data Science. \
+Fecha: 15/9/25
+
+Nombre: Moises\
+\
+Apellido: Britez
+\
+
+\hrule
+
+# contexto
+
+Los datos del examen se encuentran en `/data/smmh.csv`. Estos datos contiene información sobre 481 encuestas sobre el uso de las redes sociales y su impacto en aspectos psicológicos y conductuales.\
+Al cargar los datos, se debe obtener un data.frame con 481 filas y 21 columnas.\
+
+# Librerias necesarias
+
+```{r,warning=FALSE,message=FALSE}
+library(viridis)
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(pwr)
+library(corrplot)
+
+```
+
+
+# Problema 1 (1 punto)
+
+**Cargarlos los datos `smmh.csv`.**
+
+```{r,warning=FALSE,message=FALSE}
+data <- read.csv('./data/smmh.csv', 
+                 header = TRUE,              
+                 sep = ',',                  
+                 stringsAsFactors = FALSE,   
+                 check.names = FALSE, 
+                 fileEncoding = 'latin1')  
+```
+
+
+
+**Se pide eliminar las columnas que no aportan información y  filtrar los "missing values". Para esto, tenga en cuenta que los "missing values" no aparecen como un `NA` sino como una variable "character" que vale "N/A". En concreto, elimine la primera y la sexta columna. Una vez eliminadas estas 2 columnas, elimine todas las filas en las que hay "missing values".**
+
+```{r,warning=FALSE,message=FALSE}
+data1 <- data %>%
+  select(-1, -6)
+
+```
+
+```{r,warning=FALSE,message=FALSE}
+data2 <- data1 %>% filter(
+  data1$`1. What is your age?`  != "N/A" &
+  data1$`2. Gender` != "N/A" &
+  data1$`3. Relationship Status` != "N/A" &
+  data1$`4. Occupation Status` != "N/A" &
+  data1$`6. Do you use social media?` != "N/A" &
+  data1$`7. What social media platforms do you commonly use?` != "N/A" &
+  data1$`8. What is the average time you spend on social media every day?` != "N/A" &
+  data1$`9. How often do you find yourself using Social media without a specific purpose?` != "N/A" &
+  data1$`10. How often do you get distracted by Social media when you are busy doing something?` != "N/A" &
+  data1$`11. Do you feel restless if you haven't used Social media in a while?` != "N/A" &
+  data1$`12. On a scale of 1 to 5, how easily distracted are you?` != "N/A" &
+  data1$`13. On a scale of 1 to 5, how much are you bothered by worries?` != "N/A" &
+  data1$`14. Do you find it difficult to concentrate on things?` != "N/A" &
+  data1$`15. On a scale of 1-5, how often do you compare yourself to other successful people through the use of social media?` != "N/A" &
+  data1$`16. Following the previous question, how do you feel about these comparisons, generally speaking?` != "N/A" &
+  data1$`17. How often do you look to seek validation from features of social media?` != "N/A" &
+  data1$`18. How often do you feel depressed or down?` != "N/A" &
+  data1$`19. On a scale of 1 to 5, how frequently does your interest in daily activities fluctuate?` != "N/A" &
+  data1$`20. On a scale of 1 to 5, how often do you face issues regarding sleep?`
+  )
+
+```
+
+
+\
+**Para evitar problemas con las gráficas, cambie el nombre de las columnas con una o varias palabras clave con la que se entienda la información que contiene la columna. A modo de ejemplo, la columna correspondiente a la pregunta 9 "9.How often do you find yourself using Social media without a specific purpose?" se puede resumir en "SM_no_Purpose"**\
+**Antes de cambiar el nombre de las columnas, se aconseja crear una variable con le nombre original de las preguntas.**\
+NOTA: no hay, hasta donde yo sé, una función que haga esto en R. En otras palabras, tenéis que ir uno a uno.
+
+```{r,warning=FALSE,message=FALSE}
+nom_original_9 <- "9. How often do you find yourself using Social media without a specific purpose?"
+nom_original_10 <- "10. How often do you get distracted by Social media when you are busy doing something?"
+nom_original_11 <- "11. Do you feel restless if you haven't used Social media in a while?"
+nom_original_12 <- "12. On a scale of 1 to 5, how easily distracted are you?"
+nom_original_13 <- "13. On a scale of 1 to 5, how much are you bothered by worries?"
+nom_original_14 <- "14. Do you find it difficult to concentrate on things?"
+nom_original_15 <- "15. On a scale of 1-5, how often do you compare yourself to other successful people through the use of social media?"
+nom_original_16 <- "16. Following the previous question, how do you feel about these comparisons, generally speaking?"
+nom_original_17 <- "17. How often do you look to seek validation from features of social media?"
+nom_original_18 <- "18. How often do you feel depressed or down?"
+nom_original_19 <- "19. On a scale of 1 to 5, how frequently does your interest in daily activities fluctuate?"
+nom_original_20 <- "20. On a scale of 1 to 5, how often do you face issues regarding sleep?"
+
+data3 <- data2 %>% rename(SM_no_Purpose = nom_original) %>% rename(SM_dis_social_busy = nom_original_10) %>% rename(SM_fell_rest = nom_original_11) %>% rename(SM_how_e_dis = nom_original_12) %>% rename( SM_how_m_bot = nom_original_13) %>% rename(SM_dif_conce = nom_original_14) %>% rename(SM_how_y_c_sel = nom_original_15) %>% rename(SM_how_y_f_ab = nom_original_16) %>% rename(SM_look_seek = nom_original_17) %>% rename(SM_feel_depre = nom_original_18) %>% rename(SM_how_f_int = nom_original_19) %>% rename(SM_face_iss = nom_original_20) 
+
+
+```
+
+
+# Problema 2 (2 puntos)
+
+**Se desea generar una gráfica que permita evaluar si las respuestas tienen relación. En concreto, se quiere evaluar las respuestas numéricas (las que pueden tomar un valor entre 1 y 5).**\
+Pista: se puede utilizar la función `cor` para calcular la correlación y la función `corrplot` de la librería 'corrplot' para graficar. Mirar la ayuda de la función os puede dar alguna pista de como hacer la gráfica.
+
+```{r,warning=FALSE,message=FALSE}
+data4 <- data3[,8:19]
+
+```
+
+```{r,warning=FALSE,message=FALSE}
+cor_data4 <- cor(data4)
+corrplot(cor_data4, method = "circle")
+
+```
+
+\
+**Para las respuestas a las preguntas que toman valores entre 1 y 5, se quiere visualizar en una gráfica cual fue la proporción de cada tipo de respuesta.**
+
+```{r,warning=FALSE,message=FALSE}
+data_larga <- data4 %>% pivot_longer(
+  cols = starts_with("SM_"),
+  names_to = "Pregunta",
+  values_to = "valor"
+)
+
+para_plot <- data_larga %>%
+   count(valor)
+
+Fig14 <- ggplot(data = para_plot) + geom_col(mapping = aes(x = valor, y=n), width = 0.5, 
+                                       color = 'blue', fill='royalblue')
+
+Fig14
+
+
+```
+
+
+# Problema 3 (3 puntos)
+
+**En este primer test de hipótesis se desea evaluar si el hecho de ser mujer aumenta las probabilidades de tener depresión. Considere que las personas que tienen depresión son las que han contestado a la pregunta "18. How often do you feel depressed or down?" con un valor igual o superior a 3. Para considerar el si el test es "greater" o "less", tenga en cuenta el orden de los facotres.**\
+Nota: para este análisis solo considere las personas que han contestado "Female" o "Male".
+
+```{r,warning=FALSE,message=FALSE}
+data_fem <- data3 %>%
+  select(2,17)%>%
+  filter(`2. Gender` == "Female")
+
+data_mas <- data3 %>%
+  select(2,17)%>%
+  filter(`2. Gender` == "Male")
+
+mu1 = mean(data_fem$SM_feel_depre)
+mu2 = mean(data_mas$SM_feel_depre)
+
+
+```
+
+\
+\
+**Se desea construir un modelo de regresión logística para predecir si una persona tiene depresión o no. Para ello considere para hacer la predicción las siguientes variables explicativas: Edad, sexo y el número de apps que utiliza el usuario. Por último, solo considere las personas que han contestado "Female" o "Male" en la preguta sobre el género. Considere que tienen depresión los que han contestado a la pregunta "18. How often do you feel depressed or down?" con un valor igual o superior a 3.**\
+Nota: Para construir la variable con el número de apps tiene que utilizar la variable que corresponde a la pregunta 7."7.What social media platforms do you commonly use?"
+
+```{r,warning=FALSE,message=FALSE}
+
+
+
+```
+
+**Basándose en los resultados del modelo, ¿tener más apps aumenta o disminuye las probabilidades de tener depresión?**
+
+
+
+# Problema 4 (2 puntos)
+
+**Con las preguntas cuyas respuestas pueden tomar valores entre 1 y 5, se desea realizar un análisis de componentes principales. Para este análisis no incluir la pregunta "18. How often do you feel depressed or down?". Dibujar las 2 componentes principales y colorear los puntos en función de si una persona tienen depresión o no. El criterio para determinar si una persona tiene depresión o no es el mismo que en los ejercicios anteriores.**
+
+
+```{r,warning=FALSE,message=FALSE}
+
+
+```
+
+
+
+# Problema 5 (2 puntos)
+
+**Para este ejercicio nos vamos a centrar en hombres ("Male") solteros ("Single"). Queremos evaluar en este subset si la edad es diferente para las personas que afirman tener depresión y la personas que afirman no tener depresión. Considere que la edad se comporta según una distribución normal.**
+
+```{r,warning=FALSE,message=FALSE}
+
+```
+
+**Según los resultados que ha obtenido, ¿se puede afirmar si diferencia?**\
+\
+\
+**Si quisiéramos observar una diferencia de medias igual 2 y con un potencia estadística (power) del 80%, ¿Cuál es el número de muestras que haría falta? Considere la varianza poblacional igual a 11.7 $\sigma^2 = 11.7$**
+
+```{r,warning=FALSE,message=FALSE}
+
+```
+
+**Según los resultados observados y dado el muestreo que tenemos, ¿podríamos alcanzar una potencia estadística del 80%?**:  
+
+```{r,warning=FALSE,message=FALSE}
+
+```
+

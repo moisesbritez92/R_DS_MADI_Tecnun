@@ -1,0 +1,484 @@
+---
+title: "Ejercicios día 4"
+output: 
+  html_document:
+    toc: true
+date: "2025-09-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Los ejercicios que se presentan en este documento son sobre Visualización y Análisis de Datos en R. Los ejercicios del primer examen se van a parecer a estos ejercicios.
+
+Librerías que vamos a necesitar:
+
+```{r libraries,warning=FALSE,message=FALSE}
+library(ggplot2)
+library(viridis)
+library(ggrepel)
+library(dplyr)
+library(tm)
+library(textstem)
+library(pwr)
+library(tidyr)
+library(stringr)
+```
+
+# Ejercicio 1
+
+Importar el reporte hitórico de crimenes en EEUU desde 1977 hasta 1999. Este data set contiene información sobre diferentes tipos de crimenes en los 51 estados durante el periodo de tiempo señalado. Además contiene información sobre la población, renta per capita, etc.
+
+Información sobre estos datos se puede encontrar en el siguiente <a href="https://vincentarelbundock.github.io/Rdatasets/doc/AER/Guns.html" target="_blank">link</a>.
+
+
+**Cargar crimeUS.csv**
+
+```{r}
+data <- read.csv('CrimeUS.csv', header = T, sep = ',', stringsAsFactors = F)
+```
+
+### 1.1
+**Generar una imagen para visualizar rápidamente qué estados y en que años hubo más robos. En la gráfica se debe poder visualizar la evolución del número de robos para cada estado de forma sencilla**
+
+```{r}
+
+ggplot(data, aes(x = year, y = robbery, color = state)) +
+  geom_line()
+  
+```
+
+### 1.2
+**Generar una gráfica para visualizar en cada año, el número total de cada tipo de crimen También se pide generar una tabla con esta información**
+
+```{r}
+data2 <- data %>%
+select(year, violent, murder, robbery)
+```
+
+```{r}
+data2 <- data2 %>%
+pivot_longer(
+  cols = c('robbery', 'violent', 'murder'),
+  names_to = 'crimen',
+  values_to = 'cant'
+
+)
+
+
+data3 <- data2 %>%
+group_by(year, crimen) %>%
+summarise(cant_2 = sum(cant)) %>%
+ungroup()
+
+
+ggplot(data3, aes(x = year, y = cant_2, color = crimen))+
+geom_line()
+
+```
+
+
+
+### 1.3
+**Generar una gráfica para visualizar en cada año, la proporción de cada tipo de crimen.**
+
+```{r}
+data4 <- data3 %>%
+group_by(year)%>%
+mutate(
+  cant_tot = 100 * cant_2 / sum(cant_2)
+)
+
+ggplot(data4, aes(x = year, y = cant_tot, color = crimen)) +
+geom_col()
+
+
+```
+
+
+### 1.4
+**Generar una imagen para visualizar el número de presos que hubo cada año entre 1980 y 1990 distinguiendo entre los estados de Alabama, Arizona y Florida.**
+
+```{r}
+data_pr <- data %>%
+select(year, prisoners, state)%>%
+filter(year >= 1980 & year <=1990)%>%
+filter(state %in% c("Alabama", "Arizona", "Florida")) %>%
+group_by(year) %>%
+mutate(
+  cant_year = sum(prisoners)
+) %>%
+ungroup()
+
+ggplot(data_pr, aes(x= year, y = cant_year, color = state)) +
+geom_col() +
+theme_bw()
+
+```
+
+### 1.5
+**¿El número de presos es diferente entre los 3 estados?**
+
+```{r}
+mdl <- lm(prisoners ~ state, data = data_pr)
+
+anova_1 <- anova(mdl)
+anova_1
+
+
+```
+
+### 1.6
+**Generar una imagen para visualizar la distribución del número de robos y prisioneros en cada año, comparando ambas variables simultáneamente.**
+
+```{r}
+data6 <- data %>%
+select(year, robbery, prisoners)%>%
+group_by(year) %>%
+summarise(
+  count_r = sum(robbery),
+  count_p = sum(prisoners)
+)%>%
+ungroup()
+
+ggplot(data6, aes(x=count_r, y=count_p, color=year)) +
+ geom_point(size = 5)
+```
+
+
+### 1.7
+
+**Ahora nos vamos a centrar en el estado de Nevada. Queremos saber que tipo de crimen tiene mayor correlación con el número de prisioneros. Para realizar el test estadístico correpondiente se puede utilizar la función `cor.test()`. Finalmente, generar una gráfica para visualizar la correlación del ese tipo de crimen con el número de prisioneros**
+
+
+```{r}
+
+data_n <- data %>%
+select(year, violent, murder, robbery, prisoners, state) %>%
+filter(state %in% c('Nevada'))
+
+cor.test(x= data_n$violent, y= data_n$prisoners, alternative = 'two.sided')
+
+cor.test(x= data_n$murder, y= data_n$prisoners, alternative = 'two.sided')
+
+cor.test(x= data_n$robbery, y= data_n$prisoners, alternative = 'two.sided')
+
+ggplot(data_n, aes(x=violent, y=prisoners)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+```
+### 1.8
+
+**Se quiere comprobar para cada estado si el número de asesinatos es diferente entre los años pasados (1977-1988) y los años más recientes(1989-1999). Finalmente, se pide visualizar estos resultados en una gráfica** 
+
+
+```{r}
+data_a1 <- data %>%
+select(year, murder) %>%
+filter(year >= 1977 & year <= 1988)
+
+
+data_a2 <- data %>%
+select(year, murder) %>%
+filter(year >= 1989 & year <= 1999)
+
+sh1 <- shapiro.test(data_a1$murder)
+sh2 <- shapiro.test(data_a2$murder) 
+print(sh1)
+print(sh2)
+
+t.test(data_a1$murder, data_a2$murder, paired = FALSE,
+mu = 0,
+)
+
+wilcox.test(data_a1$murder, data_a2$murder, conf.int = TRUE, exact = FALSE)
+
+ggplot(data_a1, aes(murder)) +
+geom_histogram()
+
+ggplot(data_a2, aes(murder)) +
+geom_histogram()
+
+```
+
+
+
+# Ejercicio 2
+
+Este ejercicio corresponde al examen del curso 22/23. La única diferencia es que se han modificado los enunciado para que no sea "tan fácil".
+
+Los datos de este ejercicio tratan sobre mensajes, distinguiendo entre mensajes deseados "HAM" y mensajes no deseados "SPAM". La base de datos incluye el contenido de cada mensaje.
+
+**cargar los archivos spam.csv**
+
+```{r}
+data1 <- read.csv('./data/spam.csv', 
+                  header = T, sep = ',', stringsAsFactors = F,
+                  check.names = F, fileEncoding = 'latin1')
+# Delete columns 3,4 and 5 (son columnas vacias)
+data1 <- data1[,1:2]
+colnames(data1) <- c('Class', 'Message')
+
+```
+
+
+**Modificar la columna 'Message' para que todas las letras estén en minúsculas. Se puede utilizar la función `tolower()`. También se pide quitar los signos de puntuación, dígitos y "stop words". Para esto utilizar la librería `tm`.**
+
+Los "stop words" son palabras que no añaden información. En el campo de Procesamiento del Lenguaje (NPL) es uno de las etapas iniciales. Aunque parezca que se pierde información, la realidad es que estas palabras son inecesarias.
+
+```{r}
+data2 <- data1
+data2[,2] <- tolower(data2[,2])
+data2[,2] <- removePunctuation(data2[,2])
+data2[,2] <- removeNumbers(data2[,2])
+data2[,2] <- removeWords(data2[,2], stopwords("english"))
+```
+
+
+**Eliminar en la columna 'Message' las palabras que tengan menos de 3 letras**
+
+```{r}
+
+
+
+```
+
+
+### 2.1
+
+**Calcular para cada mensaje la longitud media de las palabras que forman el mensaje. Para esto, primero vamos a transformar cada palabra en su forma base (conocido como lema). Esto se puede hacer utilizando la función `lemmatize_words()`. Para calcular la media no se deben tener en cuenta palabras base con longitud menor a 3.**
+
+A modo de ejemplo de como funciona esta función:
+
+```{r}
+lemmatize_words("driving")
+# driving -> drive
+```
+
+```{r}
+
+
+
+```
+
+
+### 2.2 
+
+**¿la longitud media de las palabras que forman los mensajes (calculado en el apartado anterior) es diferente para los mensajes tipo "Spam" y tipo "Ham"? Realiza una gráfica para mostrar esta comparación.**
+
+```{r}
+
+
+
+
+```
+
+
+### 2.3
+
+**Se pide construir una matriz Y que contenga para cada mensaje (fila) la cantidad de veces que aparece cada palabra (columnas). La matriz Y tendrá por tanto 5479 filas (número de mensajes) y xxx columnas (siendo xxx el número de palabras distintas**
+
+```{r}
+
+
+
+```
+
+
+**Crear una matriz X que resulte de eliminar palabras que tengan una frecuencia menor a 50. Es decir, palabras que en total hayan aparecido menos de 50 veces. La matriz resultante debe tener 5479 filas y 119 columnas.**
+
+```{r}
+
+
+
+```
+
+
+**Realizar una gráfica en 2D que resuma, en la medida de lo posible, el máximo de información que contienen las columnas de la matriz X. En la gráfica debe distinguir entre los mensajes tipo "ham" y tipo "spam".**
+
+```{r}
+
+
+
+```
+
+**Con la información obtenida de la gráfica anterior, ¿hay algún eje de la gráfica donde se pueda distinguir entre los mensajes tipo "ham" y tipo "spam"? En caso de que sea así, ¿que variables de X son las que más influyen en ese eje?**
+
+```{r}
+
+
+
+```
+
+
+**¿Están estas 5 palabras relacionadas con que el mensaje sea "spam" o sea "ham"?**
+
+```{r}
+
+
+
+
+
+```
+
+
+# Ejercicio 3
+
+Los datos de este ejercicio contiene información de los partidos de la liga 2018-2019.
+
+**cargar los datos**
+
+```{r}
+dataF <- read.csv('./data/season-1819_csv.csv', 
+                  header = T, sep = ',', stringsAsFactors = F,
+                  check.names = F)
+```
+
+
+### 3.1
+
+**Se pide evaluar para cada equipo si el hecho de jugar de local aumenta las posibilidades de ganar. Dar una lista, con una tasa de falsos positivos del 10%, de equipos en los que jugar de local influye en el hecho de ganar**
+
+```{r}
+
+
+
+
+```
+
+### 3.2
+
+**Se pide generar una gráfica en la que se muestre para cada equipo la proporción de victorias como local y como visitante.**
+
+
+```{r}
+
+
+
+```
+
+**Realizar también la gráfica mostrando el número total de victorias, distinguiendo entre las victorias como local y como visitante**
+
+```{r}
+
+
+
+```
+
+
+### 3.3
+
+**Las siguiente variables muestran caracteristicas sobre el rendimiento del equipo que jugó como visitante**
+
+```{r}
+cols1 <- c('AS', 'AST','AC', 'AF', 'FTAG', 'HTAG', 'AY')
+```
+
+**Se pide generar una tabla que contenga para cada equipo esta información, sumando el rendimiento en cada partido**
+
+```{r}
+
+
+
+```
+
+**Realizar una gráfica en 2D que maximice est información**
+
+```{r}
+
+
+
+```
+
+
+# Ejercicio 4
+
+Este ejercicio corresponde al examen del curso 23/24. Se han modificado un poco las preguntas para que no sea "tan fácil".
+
+### 4.1
+**cargar los datos Residuos.csv.** <br>
+**Eliminar la segunda columna "Total Nacional"** <br>
+**Eliminar filas que contengan "missing values"** <br>
+**Cambiar el nombre del data.frame a 'Tipo', 'Comunidad', 'Año', 'Total'** <br>
+**1 punto** <br>
+
+```{r}
+
+
+
+
+```
+
+
+### 4.2
+
+**Convierte la variable 'Total' en numérica, teniendo en cuenta que es necesario eliminar los "."**<br>
+**Elimina el código numérico en las columnas 'Tipo' y 'Comunidad'**<br>
+
+```{r}
+
+
+
+```
+
+
+**Finalmente, ejecuta el siguiente código para tener los nombres de las comunidades más cómodos de leer**<br>
+**2 puntos**<br>
+
+
+```{r}
+
+
+
+```
+
+
+### 4.3
+
+
+
+**Resumir datos anteriores por año y comunidad, obteniendo para cada comunidad la cantidad total de residuos**<br>
+**Leer el archivo 'Poblacion.csv'**<br>
+**Normalizar la cantidad de residuos por la población de la comunidad. Unidades: Toneladas/persona.**<br><br>
+**Realizar un gráfico para las siguientes comunidades:**<br>
+```{r}
+idx <- iso <- c('Madrid', 'Murcia', 'País Vasco', 'Islas Baleares', 'Cataluña', 'Navarra')
+```
+**En el que se muestre los los residuos normalizados por comunidad y año**<br>
+
+```{r}
+
+
+
+
+```
+
+
+### 4.4
+
+**Evaluar la tendencia lineal de los residuos a lo largo del tiempo para cada comunidad utilizando la prueba de correlación (calcular el p.value para cada comunidad)**<br>
+**Identificar qué comunidades muestran una disminución significativa en los residuos a lo largo del tiempo (FDR <= 0.05)**<br>
+**2 puntos**
+
+
+```{r}
+
+
+
+
+```
+
+
+### 4.5
+
+En el apartado anterior estamos utilizando n=12 para la prueba de correlación.
+¿Es eso suficiente para capturar una correlación negativa de 0.5, asumiendo alpha=0.05 y power=0.8.
+
+```{r}
+
+
+
+```
+

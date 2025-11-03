@@ -1,0 +1,2089 @@
+---
+title: "CHULETA EXAMEN R - Data Science"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+date: "15 Octubre 2025"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+# TEMA 1: MANIPULACIÓN DE DATOS
+
+## Librerías necesarias
+
+```{r}
+library(tidyverse)    # Megapaquete: incluye dplyr, tidyr, ggplot2, purrr
+library(dplyr)        # Manipulación de datos (filter, select, mutate...)
+library(tidyr)        # Ordenar datos (pivot_longer, pivot_wider)
+library(data.table)   # Lectura rápida de CSV grandes
+library(matrixStats)  # Estadísticas sobre matrices
+```
+
+## 1.1 CARGAR DATOS
+
+### CSV estándar
+
+```{r}
+# header=T: primera fila son nombres de columnas
+# stringsAsFactors=F: NO convertir texto a factor automáticamente
+# check.names=F: NO modificar nombres de columnas (mantener espacios, símbolos)
+
+data <- read.csv('ruta/archivo.csv', header = T, sep = ',', stringsAsFactors = F, check.names = F)
+
+# ------ DESPUES DE CARGARLO FIJARME SI ALGUNA COLUMNA ES UN FACTOR PARA CONVERTIRLO ANTES DE TRATARLO ---------------
+# ------ LIMPIAR VALORES NA ---------------
+
+```
+
+### CSV rápido (data.table)
+
+```{r}
+# fread: 10-50x más rápido que read.csv, especialmente en archivos grandes
+data <- data.table::fread("ruta/archivo.csv")
+data <- as.data.frame(data)
+```
+
+### JSON
+
+```{r}
+library(jsonlite)
+myData <- fromJSON('ruta/archivo.json')
+data <- as.data.frame(myData, flatten = TRUE)  # flatten = TRUE para simplificar
+```
+
+### Crear un dataframe manualmente
+
+```{r}
+# Crear vectores
+nombres <- c("Ana", "Luis", "Marta")
+edades <- c(23, 31, 27)
+ciudad <- c("Madrid", "Bilbao", "Sevilla")
+
+# Crear el dataframe
+df <- data.frame(Nombre = nombres, Edad = edades, Ciudad = ciudad)
+```
+
+### Crear un dataframe vacío
+
+```{r}
+df_vacio <- data.frame(Nombre = character(),
+                       Edad = numeric(),
+                       Ciudad = character(),
+                       stringsAsFactors = FALSE)
+
+```
+
+## 1.2 EXPLORAR DATOS
+
+```{r}
+dim(data)           # dimensiones
+head(data)          # primeras filas
+class(data)         # tipo de objeto (data.frame, matrix, list...)
+colnames(data)      # nombres de columnas
+unique(data$columna)  # Valores únicos de esa columna (Cuando uso pipes, usar distinct)
+```
+
+## 1.3 TRANSFORMAR FILAS (group_by, filter, arrange, distinct)
+
+### Operaciones básicas con dplyr (MUCHO MÁS RÁPIDO que bucles)
+
+**Filter** - Seleccionar filas por condición
+
+```{r}
+# >= 2: quédate solo con filas donde la columna cumpla la condición
+data %>% dplyr::filter(columna >= 2)
+data %>% dplyr::filter(columna %in% c("opción1", "opción2"))
+data %>% dplyr::filter(columna == max(columna))
+
+# Elimina las filas con valores faltantes
+data %>% dplyr::filter(!is.na(columna))
+
+# Múltiples condiciones (coma = AND): ambas deben cumplirse
+data %>% dplyr::filter(columna1 > 10, columna2 == "valor")
+```
+
+**Arrange** - Ordenar filas
+
+```{r}
+data %>% arrange(columna)                    # ascendente
+data %>% arrange(desc(columna))              # descendente
+data %>% arrange(columna1, desc(columna2))   # Primero por col1 ascendente, luego col2 descendente
+```
+
+**Select** - Elegir columnas
+
+```{r}
+data %>% dplyr::select(columna1, columna2, columna3) # Selecciona SOLO estas 3 columnas
+data %>% dplyr::select(-columna_a_quitar)       # Selecciona TODAS EXCEPTO esta columna
+data %>% dplyr::select(starts_with("X"))       # Selecciona todas las que empiecen por "X"
+data %>% dplyr::select(columna1:columna10, columna15) # Selecciona las columnas desde la columna 1 hasta la 10, y la columna 15 también
+data %>% dplyr::select(where(is.numeric))      # Selecciona las columnas que son numéricas
+```
+
+**Rename** - Cambiar nombres de columnas
+
+```{r}
+data %>% rename(nuevo_nombre = columna_vieja)
+```
+
+**Relocate** - Cambiar orden de columnas
+
+```{r}
+# Mueve las columnas desde 'fecha' hasta 'num_casos' justo DESPUÉS de 'num_uci'
+data %>% relocate(fecha:num_casos, .after = num_uci)
+
+# Mueve 'columna' justo ANTES de 'otra_columna'
+data %>% relocate(columna, .before = otra_columna)
+```
+
+**Distinct** - Eliminar duplicados
+
+```{r}
+data %>% distinct()                          # Elimina filas 100% idénticas
+data %>% distinct(columna1, columna2)        # Combinaciones únicas de estas 2 columnas
+data %>% distinct(columna1, columna2, .keep_all = TRUE)  ## Mantiene TODAS las columnas (no solo las 2)
+```
+
+**Slice_max / Slice_min** - Seleccionar filas con valores máximos o mínimos
+
+```{r}
+# Máximos o mínimos de una variable numérica
+data %>% slice_max(columna, n = 10, with_ties = TRUE)   # Los 10 mayores (incluye empates)
+data %>% slice_min(columna, n = 10, with_ties = TRUE)   # Los 10 menores (incluye empates)
+
+# Ejemplo ordenado
+data %>% slice_max(columna, n = 5) %>% arrange(desc(columna))
+```
+
+**Group_by + Summarise** - Agregar datos
+
+```{r}
+# group_by: agrupa filas por provincia (como GROUP BY en SQL)
+# summarise: calcula estadísticas para cada grupo
+# .groups='drop': deshacer agrupación al final (evita problemas)
+
+data %>% 
+  group_by(provincia) %>% 
+  summarise(
+    total = sum(num_casos), 
+    media = mean(num_casos),
+    maximo = max(num_casos),
+    .groups = 'drop'
+  ) %>% 
+  arrange(desc(total))      # Ordenar por total descendente
+```
+
+### Eliminar NA y valores incorrectos
+
+```{r}
+# Detectar NA
+any(is.na(df))                            # ¿Hay ALGÚN NA en todo el dataframe?
+sum(is.na(df))                            # ¿CUÁNTOS NAs hay en total?
+which(is.na(df), arr.ind=TRUE)            # ¿DÓNDE están? (fila y columna) Posicion de un elemnto en un df, matrix o array
+dplyr::where()
+
+# Eliminar filas con NA en cualquier columna
+data <- na.omit(data)   # Elimina CUALQUIER fila que tenga NA en CUALQUIER columna
+dim(data_antes)
+dim(data_después)
+
+# Eliminar NA en columna específica
+data <- data %>% filter(!is.na(columna_especifica))
+
+# Eliminar valores categóricos incorrectos (ej: "NC")
+data <- data[-which(data$sexo == 'NC'), ]
+unique(data$sexo)  # verificar
+```
+
+### Evitar bucles apply / sapply
+
+**Apply** - Aplicar función a filas/columnas
+
+```{r}
+# Aplicar función a cada fila (MARGIN=1) o columna (MARGIN=2) de una matriz/dataframe
+# Más rápido que bucles. HACER APPLY SOLAMENTE NO MODIFICA EL DATAFRAME.
+
+# Aplicar función a cada COLUMNA (MARGIN=2)
+apply(data, 2, mean)           # Media de cada columna
+apply(data, 2, sd)             # Desviación estándar de cada columna
+apply(data[, 1:5], 2, sum)     # Suma de las primeras 5 columnas
+
+# Aplicar función a cada FILA (MARGIN=1)
+apply(data, 1, sum)            # Suma de cada fila
+apply(data, 1, function(x) mean(x[!is.na(x)]))  # Media ignorando NAs
+```
+
+**Sapply** - Aplicar función a lista/vector de forma simplificada
+
+```{r}
+# sapply: versión simplificada de lapply (devuelve vector o matriz, no lista)
+# Útil para operaciones rápidas
+
+# Aplicar función a cada elemento de una lista o columnas de dataframe
+sapply(data, class)            # Tipo de dato de cada columna
+sapply(data, function(x) sum(is.na(x)))  # Contar NAs en cada columna
+sapply(1:10, function(x) x^2)  # Elevar al cuadrado (vectorizado)
+sapply(d, function(x) 1-pnorm(x)) # Calcular p-value de cada elemento del array
+
+# Diferencia clave: lapply devuelve LISTA, sapply devuelve VECTOR
+lapply(data, mean)   # Devuelve lista
+sapply(data, mean)   # Devuelve vector (más fácil de ver)
+```
+
+### Slicing básico
+
+**Data frames** - Aplicar slicing a dataframes
+
+```{r}
+# [filas, columnas] - dejar en blanco = todas
+data[1, ]              # Fila 1, todas las columnas
+data[1:5, ]            # Filas 1 a 5, todas las columnas
+data[c(1, 3, 5), ]     # Filas 1, 3, 5 (saltando), todas las columnas
+data[, 1]              # Columna 1, todas las filas
+data[1:5, 1:3]         # Filas 1-5, columnas 1-3
+data[-1, ]             # Todas EXCEPTO fila 1
+data[, -c(2, 4)]       # Todas las columnas EXCEPTO 2 y 4
+
+value <- data %>%
+      filter(columna < 100) %>%
+      count() %>%
+      .[1,1]
+
+```
+
+**Vectores y listas** - Aplicar slicing a vectores y listas
+
+```{r}
+# [filas, columnas] - dejar en blanco = todas
+x <- c(10, 20, 30, 40, 50)
+x[1]                   # Elemento 1
+x[1:3]                 # Elementos 1 a 3
+x[c(1, 3, 5)]          # Elementos 1, 3, 5
+x[-2]                  # Todos EXCEPTO elemento 2
+```
+
+### Accesos directos a data frames (filas/columnas/valores concretos) MEJOR USAR FILTER
+
+**COLUMNAS** - Como vector vs como data.frame
+
+```{r}
+v_col <- data$columna # Vector (pierde atributos de df)
+v_col2 <- data[["columna"]] # Equivalente, útil con nombres con espacios
+sub_df <- data["columna"] # Data frame de 1 columna
+sub_df2 <- data[, c("col1", "col2"), drop = FALSE] # Varias columnas, mantén data.frame
+```
+
+**FILAS** - Por índice o por condición
+
+```{r}
+fila5 <- data[5, , drop = FALSE] # Fila 5 completa (como df)
+filas_1_10 <- data[1:10, ] # Primeras 10 filas
+filtro_cond <- data[data$edad > 30 & data$sexo == "M", ] # Condición base R
+filtro_subset <- subset(data, edad > 30 & sexo == "M") # Con subset()
+```
+
+## 1.4 TRANSFORMAR COLUMNAS (mutate, factor, tipos de datos)
+
+### Crear/modificar columnas
+
+```{r}
+data %>% mutate(
+  nueva_col = valor_constante,
+  otra_col = columna1 + columna2,
+  columna_condicional = if_else(columna > 10, "alto", "bajo")
+)
+```
+
+### Trabajar con fechas
+
+```{r}
+library(lubridate)
+
+data %>% mutate(
+  year = year(fecha),
+  month = month(fecha),
+  day = day(fecha),
+  date = date(fecha)
+)
+```
+
+### Convertir a factor (variables categóricas)
+
+```{r}
+# as.factor: convierte a factor (necesario para tests estadísticos, modelos)
+data$sexo <- as.factor(data$sexo)
+data$sexo <- factor(data$sexo, levels = c("M", "F"))  # con orden específico
+
+# Eliminar niveles no deseados
+data$sexo <- factor(data$sexo)
+unique(data$sexo)
+```
+
+### Cambiar tipo de datos
+
+```{r}
+data$columna <- as.numeric(data$columna)
+data$columna <- as.character(data$columna)
+data$columna <- as.integer(data$columna) # Convertir a número entero
+```
+
+### Eliminar puntos de números y Convertir a numero
+
+```{r}
+library(stringr)
+# Si los números vienen como "1.234.567" (formato europeo) y quieres "1234567"
+data$columna <- str_replace_all(data$columna, '\\.', '') # Elimina TODOS los puntos
+
+data$columna <- as.numeric(data$columna) # Convierte a número
+
+# Sacar valor numérico de la casilla del dataframe
+a <- data %>%
+      filter(Columna == 'Col1') %>%
+      count() %>%
+      as.numeric()
+
+# Sacar valor numérico de una casilla concreta entre varias del dataframe
+a <- data2 %>%
+        filter(Columna == 'Col1') %>%
+        .[1,3] %>% # fila 1, columna 3
+        as.numeric()
+
+```
+
+## 1.5 TIDY DATA (pivot_longer, pivot_wider)
+
+### Pasar de ancho a largo (pivot_longer)
+
+```{r}
+data %>% pivot_longer(
+  cols = starts_with("wk"),  # Todas las columnas que empiecen por "wk"
+  names_to = "week",         # Los NOMBRES de esas columnas van a "week"
+  values_to = "rank"         # Los VALORES van a "rank"
+)
+
+data %>% pivot_longer(
+  cols = c(col1, col2, col3), 
+  names_to = "type",         
+  values_to = "total"        
+)
+```
+
+### Pasar de largo a ancho (pivot_wider)
+
+```{r}
+# ANTES: una fila por combinación → formato LARGO
+# DESPUÉS: categorías como columnas → formato ANCHO
+data %>% pivot_wider(
+  names_from = columna_para_nombres, # Esta columna se convierte en nombres de columnas
+  values_from = columna_para_valores  # Esta columna contiene los valores
+)
+```
+
+## 1.6 OPERACIONES ESPECIALES
+
+### Imprimir texto
+
+```{r}
+x <-10
+cat("El valor de x es", x, "\n")
+```
+
+### Append
+
+```{r}
+x <-c()
+x <- append(x, value)
+```
+
+### Contar ocurrencias
+
+```{r}
+data %>% dplyr::count(columna)   # Cuenta cuántas veces aparece cada valor
+data %>% dplyr::count(columna1, columna2)  # cuenta por múltiples categorías
+```
+
+### Detectar duplicados
+
+```{r}
+duplicated(data)         # Vector TRUE/FALSE: TRUE si la fila es duplicada
+sum(duplicated(data))    # número total de duplicados
+```
+
+### Redondear valores
+
+```{r}
+# Redondear números a cierta cantidad de decimales
+round(3.14159, 2)      # 3.14
+round(data$columna, 1) # redondea la columna a 1 decimal
+```
+
+### Generar un array de valores
+
+```{r}
+# Crear secuencias numéricas rápidamente
+seq(1, 10, by = 2)         # 1 3 5 7 9
+seq(0, 1, length.out = 5)  # 0.00 0.25 0.50 0.75 1.00
+seq(10, 1, by = -3)        # 10 7 4 1
+```
+
+### JOINS (merge seguro de data frames)
+
+```{r}
+# Unir tablas por varias claves (sin bucles)
+# left_join: conserva todas las filas de x, añade columnas de y si hay match
+library(dplyr)
+
+# Al ser un left join, se conservan todas las filas de x. 
+# En las filas donde coinciden las columnas 'clave1' y 'clave2', 
+# se añaden los valores correspondientes de las columnas de y.
+df_join <- x %>%
+  left_join(y, by = c("clave1", "clave2"))  # renombra 'clave1/2' por tus columnas
+
+# Ejemplos útiles:
+# - Normalizar por población: left_join(residuos_por_comunidad_y_año, poblacion, by=c("Comunidad","Año"))
+# - Evitar NAs tras el join:
+#   df_join <- df_join %>% filter(!is.na(columna_necesaria))
+```
+
+### case_when() para variables categóricas / flags
+
+```{r}
+# Crear variables a partir de condiciones múltiples
+library(dplyr)
+
+df <- df %>%
+  mutate(
+    resultado = case_when(
+      cond1 ~ "A",
+      cond2 ~ "B",
+      TRUE  ~ "Otro"
+    ),
+    flag_win = case_when(
+      lugar == "Home" & FTR == "H" ~ 1L,
+      lugar == "Away" & FTR == "A" ~ 1L,
+      TRUE ~ 0L
+    )
+  )
+```
+
+### Tablas de contingencia rápidas desde un data frame
+
+```{r}
+# Construir tablas 2x2 y aplicar Fisher/Chi-cuadrado
+# xtabs cuenta ocurrencias por categorías sin hacer bucles manuales
+ct <- xtabs(~ resultado + condicion, data = df)
+fisher.test(ct, alternative = "greater")  # o chisq.test(ct)
+
+```
+
+## 1.7 STRINGS: separar valores de una columna
+
+### Librerias
+
+```{r}
+library(stringr)   # split/regex
+library(tidyr)     # separate()
+```
+
+### Opciones típicas de separación
+
+```{r}
+x <- c("A.B.C", "D E", "F,G;H", "  ST   GK  ")
+
+# 1) Espacios (uno o más)  → primer token
+# str_squish() elimina espacios al inicio y al final, y reduce múltiples espacios intermedios a uno solo.
+# " +" indica que el patrón de separación son uno o más espacios consecutivos.
+# n = 2 crea dos columnas: la primera con el primer elemento y la segunda con el resto.
+# [, 1] selecciona todas las filas de la primera columna (primer token).
+str_split_fixed(str_squish(columna), " +", n = 2)[, 1]
+
+# 2) Punto literal (ojo: escapar) → tres columnas
+# En expresiones regulares, "." significa “cualquier carácter”, por eso hay que escaparlo con doble barra: "\\." para un punto literal.
+# n = 3 divide el texto en hasta tres columnas (rellena con "" si faltan partes).
+# Devuelve una matriz con tantas filas como elementos tenga 'x' y 3 columnas con cada fragmento separado por puntos.
+str_split_fixed(x, "\\.", n = 3)
+
+# 3) Coma o punto y coma (uno o más)
+# "[,;]+" indica una clase de caracteres que incluye coma y punto y coma; el "+" permite uno o más seguidos.
+# n = 3 crea tres columnas (rellena con "" si faltan valores).
+# Útil para separar campos con distintos delimitadores como "," o ";".
+str_split_fixed(x, "[,;]+", n = 3)
+
+# 4) Barra vertical/pipe (escapar \|)
+# En regex, "|" significa “OR”, por eso debe escaparse con doble barra: "\\|" para usarlo como separador literal.
+# n = 3 divide el texto en hasta tres columnas (rellena con "" si faltan partes).
+# Ejemplo típico: "CM|CAM|CDM" → "CM" "CAM" "CDM".
+str_split_fixed("CM|CAM|CDM", "\\|", n = 3)
+
+# 5) Cualquier separador “no alfanumérico”
+# "[^A-Za-z0-9]+" indica cualquier carácter que NO sea letra ni número (espacios, puntos, comas, etc.).
+# El "+" agrupa múltiples separadores consecutivos como uno solo.
+# n = 3 divide en tres columnas según cualquier separador no alfanumérico.
+# Útil cuando no sabes exactamente qué delimitador se usó.
+str_split_fixed(x, "[^A-Za-z0-9]+", n = 3)
+```
+
+### Texto (NLP)
+
+```{r}
+# Preproceso genérico con tm + lematización (textstem)
+library(tm)
+library(textstem)
+library(stringr)
+
+# Concatenar caracteres
+cadena1 <- "Hola"
+cadena2 <- "Mundo"
+resultado <- paste(cadena1, cadena2)
+
+# Convertir una cadena de caracteres en una lista de palabras separadas por espacios
+unlist(str_split(df$Message, " +"))
+# resultado será "Hola Mundo"
+
+# lematizar palabras
+lemmatize_words("playing") # play
+
+
+# df$text: vector de textos (carácter). Mantén palabras de >= 3 letras.
+prep_text <- function(text_vec, lang="english"){
+  # Crear un corpus de textos a partir del vector de entrada
+  corpus <- VCorpus(VectorSource(text_vec))
+  
+  # Convertir todo el texto a minúsculas
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  
+  # Eliminar signos de puntuación
+  corpus <- tm_map(corpus, removePunctuation)
+  
+  # Eliminar números
+  corpus <- tm_map(corpus, removeNumbers)
+  
+  # Eliminar palabras vacías (stopwords) según el idioma indicado
+  corpus <- tm_map(corpus, removeWords, stopwords(lang))
+  
+  # Quitar espacios en blanco adicionales
+  corpus <- tm_map(corpus, stripWhitespace)
+  
+  # ---- Lematización por documento ----
+  # Crear una función que lematiza cada palabra del texto
+  lemmatize_doc <- content_transformer(function(x) {
+    lx <- lemmatize_words(unlist(strsplit(x, " ")))  # Separar palabras y lematizarlas
+    paste(lx, collapse = " ")  # Unir las palabras lematizadas de nuevo en un texto
+  })
+  corpus <- tm_map(corpus, lemmatize_doc)
+  
+  # ---- Filtrar palabras con menos de 3 letras ----
+  drop_short <- content_transformer(function(x){
+    w <- unlist(strsplit(x, " "))     # Separar en palabras
+    w <- w[nchar(w) >= 3]             # Conservar solo palabras con ≥ 3 caracteres|nchar cuenta el numero de letras
+    paste(w, collapse = " ")          # Volver a unir las palabras
+  })
+  corpus <- tm_map(corpus, drop_short)
+  
+  # Devolver el corpus preprocesado
+  corpus
+}
+
+
+# Matriz documento–término con tm (rápido y general)
+# wordLengths = c(3, Inf) asegura >=3 letras; puedes ajustar sparsity si hace falta.
+build_dtm_tm <- function(corpus, min_total = 1){
+  # Crear una matriz documento-término (DTM) a partir del corpus
+  # Solo considera palabras con 3 o más letras
+  dtm <- DocumentTermMatrix(corpus, control = list(wordLengths = c(3, Inf)))
+  
+  # Convertir el objeto DTM a una matriz normal (para manipular más fácilmente)
+  m <- as.matrix(dtm)
+  
+  # Calcular la frecuencia total de cada término (columna)
+  # y quedarse solo con las columnas cuyo total >= min_total
+  keep <- colSums(m) >= min_total
+  
+  # Filtrar la matriz para conservar solo las columnas (términos) seleccionadas
+  # drop = FALSE asegura que el resultado sigue siendo una matriz aunque quede una sola columna
+  m[, keep, drop = FALSE]
+}
+
+# Alternativa tidy (opcional): tidytext ----
+# Requiere: install.packages("tidytext")
+# library(tidytext)
+# tokens <- df %>% mutate(doc_id = row_number()) %>% unnest_tokens(word, text)
+# clean   <- tokens %>% anti_join(stop_words, by="word") %>% filter(nchar(word) >= 3)
+# X <- clean %>% count(doc_id, word) %>% cast_dtm(doc_id, word, n) %>% as.matrix()
+
+```
+
+### Texto NLP (2)
+
+```{r}
+mean_word_length <- function(text_vec){
+  sapply(text_vec, function(txt){
+    w <- unlist(strsplit(txt, " "))
+    w <- w[nchar(w) >= 3]
+    if(length(w)==0) return(NA_real_)
+    mean(nchar(w))
+  })
+}
+
+```
+
+------------------------------------------------------------------------
+
+# TEMA 2: VISUALIZACIÓN Y TESTS DE HIPÓTESIS
+
+## Librerías necesarias
+
+```{r}
+library(ggplot2) # Sistema de gráficos principal
+library(viridis) # Paletas de colores amigables (daltonismo, impresión B/N)
+library(ggpubr)  # Gráficos listos para publicación científica
+library(ggrepel) # Etiquetas que no se solapan
+```
+
+## 2.1 GGPLOT2 - ESTRUCTURA BÁSICA
+
+# Tabla guía de tipos de gráficos
+
+| Gráfico | ¿Cuándo usarlo? (objetivo) | Variables (tipo) | Estéticas clave (`aes`) | Ventajas | Precauciones / Alternativas |
+|----|----|----|----|----|----|
+| **Scatter (puntos)** `geom_point()` | Relación entre 2 numéricas, detectar patrones y outliers | x: num, y: num; opcional grupo: cat | `x`, `y`, `colour`/`shape` para grupo | Simple y claro | Si hay mucha superposición, usa `alpha < 1`, `geom_jitter()` o `bin2d/hex`. |
+| **Scatter + recta (LM)** `geom_point()` + `geom_smooth(method="lm")` | Relación lineal y tendencia global | x: num, y: num; grupo opcional | `x`, `y`, (`colour` grupo) | Añade tendencia y CI | Si por grupo, usa `colour = grupo` (o `facet_*`). Valida supuestos de LM si interpretas coeficientes. |
+| **Líneas (una serie)** `geom_line()` | Evolución temporal de una serie | x: tiempo/orden, y: num | `x`, `y` | Ideal para series temporales | Evita escalas rotas; marca puntos con `geom_point()` si hay pocos años. |
+| **Líneas (múltiples series)** `geom_line()` | Comparar evoluciones por grupo | x: tiempo, y: num, grupo: cat | `x`, `y`, `colour=grupo` (+ `group=grupo` si color fijo) | Comparación directa | Si muchas series, usa `facet_wrap(~grupo)` o `highlight` con filtro. |
+| **Boxplot** `geom_boxplot()` | Comparar distribución (mediana, IQR, outliers) por grupo | x: cat, y: num | `x`, `y`, `fill` | Resumen robusto | No muestra forma; añade `geom_jitter()` o cámbialo por violín si importa la densidad. |
+| **Boxplot + jitter** | Ver dispersión real + resumen | x: cat, y: num | `x`, `y`, `fill` + `geom_jitter()` | Combina precisión y forma | Controla `width` en jitter; oculta outliers en box si ya hay jitter. |
+| **Violin** `geom_violin()` | Comparar forma de distribución por grupo | x: cat, y: num | `x`, `y`, `fill` | Muestra densidad completa | Añade mediana con `stat_summary()` o un `boxplot(width=.15)` encima. |
+| **Barras (conteo)** `geom_bar()` | Frecuencia de categorías | x: cat | `x`, `fill` (subgrupo) | Rápido de leer | Si ya tienes totales, usa `geom_col()`; etiqueta con `geom_text()`. |
+| **Barras apiladas** `position="stack"` | Composición + total por categoría | x: cat, fill: subgrupo (cat) | `x`, `fill` | Muestra composición | Difícil comparar subgrupos no en la base; mejor **dodge** o **fill** según objetivo. |
+| **Barras agrupadas (dodge)** `position_dodge()` | Comparar subgrupos **dentro** de cada categoría | x: cat, fill: subgrupo (cat) | `x`, `fill` | Comparación clara por subgrupo | Menos info sobre totales; asegura misma escala y orden. |
+| **Barras proporción (100%)** `position="fill"` | Comparar **proporciones** por categoría | x: cat, y: num (o `stat=count`), fill: subgrupo | `x`, `y`, `fill` | Normaliza a 100% | No muestra magnitudes absolutas; avisa en ejes (percent). |
+| **Barras horizontales** `coord_flip()` | Etiquetas largas o muchas categorías | x: cat, y: num | `x`, `y`, `fill` | Mejora legibilidad | Ordena con `reorder()`. |
+| **Heatmap (tile)** `geom_tile()` | Matriz categoría×categoría/tiempo con magnitud | x: cat/tiempo, y: cat, fill: num | `x`, `y`, `fill` | Visión global rápida | Orden importa mucho (usa `factor(levels=...)`); usa escala perceptual (viridis). |
+| **Density** `geom_density()` | Forma de distribución continua (suavizada) por grupo | x: num, fill/colour: cat | `x`, `fill`, `colour` | Comparación de formas | Cuidado con muestras pequeñas; ajusta `bw` si hace falta. |
+| **Histograma** `geom_histogram()` | Distribución de una numérica (bins) | x: num | `x` | Intuitivo | Sensible a `bins`/`binwidth`; para varias series, facetas o `position="identity", alpha`. |
+| **Volcano** (plantilla) | Diferencia (efecto) vs. significancia | x: log2FC (num), y: –log10(p) (num), color: sig | `x`, `y`, `colour` | Destaca hits relevantes | Define umbrales y corrige multiplicidad (BH). Etiqueta solo lo significativo. |
+| **PCA scatter** (biplot simple) | Reducir dimensión y ver separación de clases | x: PC1, y: PC2 (num), color: clase | `x`, `y`, `colour` | Resume alta dimensión | Estandariza antes (`scale=TRUE`). Mira var. explicada. |
+| **Proporciones por equipo/lugar** `geom_bar(position="fill")` | Comparar tasas (home vs away) | x: cat (equipo), y: num, fill: lugar | `x`, `y`, `fill` | Compara proporciones | Si quieres **conteos**, usa `geom_col()` sin `fill`. |
+| **Línea normalizada por población** | Series comparables entre grupos | x: tiempo, y: métrica normalizada, color: grupo | `x`, `y`, `colour` | Compara tendencias justas | Aclara unidades (e.g., Toneladas/persona). |
+| **Anotación de correlación** `geom_label()` | Mostrar r/p en la figura | x=Inf, y=Inf o coordenadas | `label` (fuera de `aes()`) | Autoexplicativo | Fija posición con `hjust/vjust`. |
+| **Mapeo por grupo (sin color)** `group=...` | Líneas múltiples mismo color | x: tiempo, y: num, group: cat | `x`, `y`, `group` | Limpio | Sin `group`, se une todo en una sola línea. |
+
+------------------------------------------------------------------------
+
+## Reglas rápidas (decisiones en 10 segundos)
+
+-   **¿2 numéricas?** → *Scatter*. ¿Relación lineal? añade `geom_smooth(method="lm")`.\
+-   **¿Serie temporal?** → *Líneas*. ¿Varios grupos? `colour=grupo` (o `group=grupo` si mismo color).\
+-   **¿Comparar distribuciones por grupo?** → *Boxplot* (resumen), *Violin* (forma), o *Density* (superpuestas).\
+-   **¿Categorías y sus frecuencias?** → *Barras*: `geom_bar()` (conteo) o `geom_col()` (valores ya calculados).\
+-   **¿Composición por categoría?** → *Apiladas* (total + composición) o *Fill* (proporciones 100%).\
+-   **¿Matriz categoría×tiempo / variables?** → *Heatmap*.\
+-   **¿Muchos predictores, quieres ver separación?** → *PCA scatter*.\
+-   **¿Efecto vs. significancia?** → *Volcano* (log2FC vs –log10 p).
+
+------------------------------------------------------------------------
+
+```{r}
+# ESTRUCTURA: datos + estéticas (qué va en X/Y) + geometría (tipo de gráfico) + tema
+ggplot(data=df, aes(x=col_x, y=col_y)) +  # aes = aesthetics (mapeo de variables)
+  geom_TIPO() +                            # geom_point, geom_line, geom_bar...
+  theme_classic() +                        # Tema visual (aspecto del gráfico)
+  labs(title="Título", x="Eje X", y="Eje Y")  # Etiquetas
+```
+
+## 2.2 TIPOS DE GRÁFICOS
+
+### Scatter plot (puntos)
+
+```{r}
+# Puntos simples. Si 'x' o 'y' son numéricos, no necesitas factor.
+# Si 'x' fuera categórica y te importa el orden, conviértela a factor con niveles.
+ggplot(data, aes(x, y)) + # data debe ser df (as.data.frame) x son los valores del eje X, e y los valores del eje Y
+  geom_point(alpha = 0.6, size = 2, color = "blue") +
+  theme_classic()
+```
+
+### Scatter + recta de regresión + etiqueta correlación
+
+```{r}
+# requiere variables NUMÉRICAS
+
+r_pearson <- cor(data$x, data$y, method = 'pearson') # Correlación de Pearson: mide relación lineal (-1 a 1)
+
+ggplot(data, aes(x, y)) + # Para regresión por GRUPO, añade color=grupo y group=grupo.
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = 'lm', formula = y ~ x, se = TRUE, color = "red") + # lm=regresión lineal, se=intervalo de confianza
+  geom_label(aes(x = Inf, y = Inf), label = paste0('r = ', round(r_pearson, 2)), # Etiqueta en esquina superior derecha
+             hjust = 1.1, vjust = 1.5, fill = 'white') +
+  theme_classic()
+```
+
+### Line plot
+
+```{r}
+# Serie simple (una línea). Si tienes varias series (p.ej. país),
+# usa color = pais (y group = pais si todas del mismo color).
+
+ggplot(df, aes(x = anio, y = valor)) +
+  geom_line(linewidth = 1, color = "steelblue") +
+  geom_point(size = 2, color = "darkorange") +
+  theme_minimal() +
+  labs(
+    x = "Año",
+    y = "Valor",
+    title = "Evolución temporal de la variable"
+  )
+```
+
+### Line plot (múltiples series por grupo)
+
+```{r}
+# Opción 1: líneas coloreadas por grupo
+ggplot(df, aes(x = anio, y = valor, colour = pais)) +
+geom_line(linewidth = 1) +
+geom_point(size = 1.5) +
+theme_classic() +
+labs(colour = "País")
+
+# Opción 2: todas las líneas del mismo color pero separadas por grupo
+ggplot(df, aes(x = anio, y = valor, group = pais)) +
+geom_line(linewidth = 1, colour = "steelblue") +
+theme_classic()
+```
+
+### Scatter por categorías + facets
+
+```{r}
+# Facets: divide en múltiples subgráficos según una variable categórica
+# Si 'clase' es categórica, ggplot la trata como discreta (factor implícito).
+# Convierte a factor si quieres controlar el orden de los paneles.
+ggplot(df, aes(x, y, color=clase)) +
+  geom_point(alpha=0.6) +
+  facet_wrap(~clase, nrow=3) +  # Un subgráfico por cada valor de 'clase'
+  theme(legend.position = "none") +  # Quita la leyenda (redundante con facets)
+  theme_classic()
+```
+
+### Boxplot básico
+
+```{r}
+# Boxplot: muestra mediana (línea), cuartiles (caja), whiskers (bigotes) y outliers (puntos)
+# 'categoria' suele ser discreta: asegúrate de su orden si es importante.
+# 'valor' numérico. 'fill' colorea la caja; 'colour' el borde.
+
+ggplot(df, aes(x = categoria, y = valor)) + # df son los datos en formato df (as.data.frame())
+geom_boxplot(colour = "red", fill = "orange", alpha = 0.2, width = 0.8) + # outliers = FALSE) +  # Oculta los outliers
+stat_boxplot(geom = "errorbar", colour = "red", width = 0.4) +
+theme_classic()
+```
+
+### Boxplot + puntos individuales (jitter)
+
+```{r}
+# Boxplot con puntos superpuestos (útil para ver distribución real)
+# 'fill = categoria' para colorear por grupo (relleno de la caja).
+library(viridis)
+
+ggplot(df, aes(x=categoria, y=valor, fill=categoria)) +
+  geom_boxplot(alpha=0.2, width=0.8, outliers = FALSE) +
+  scale_fill_viridis(discrete=TRUE, alpha=0.6) + # Paleta viridis (accesible)
+  geom_jitter(color="black", size=0.4, alpha=0.9, width=0.2) +  # width controla dispersión horizontal
+  theme_classic() +
+  theme(legend.position="none")
+```
+
+### Violin plot
+
+```{r}
+# Violin muestra la densidad completa por categoría (mejor forma de la distribución).
+ggplot(df, aes(x = categoria, y = valor)) +
+geom_violin(colour = "red", fill = "orange", alpha = 0.2, trim = FALSE) +
+theme_classic()
+```
+
+### Bar plot (conteos)
+
+#### Si tienes dos variables categóricas (grupo, categoria), calcula proporciones por grupo:
+
+```{r}
+library(dplyr)
+
+prop_por_categoria <- df %>%
+  count(grupo, categoria, name = "n") %>%
+  group_by(grupo) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+```
+
+### Conteo simple
+
+```{r}
+# Barras: altura = número de observaciones de cada categoría
+# geom_bar() sin 'y' hace conteos (stat = "count").
+ggplot(df, aes(x=categoria)) + 
+  geom_bar(width=0.5, color='blue', fill='royalblue') +  # stat='count' por defecto
+  theme_classic()
+```
+
+### Barras apiladas/agrupadas/proporciones
+
+```{r}
+# STACKED (apiladas): una barra, dividida por colores (útil para ver total y composición)
+# composición por 'tipo' dentro de cada 'categoria'
+ggplot(df, aes(x=categoria, fill=tipo)) +
+  geom_bar(position='stack') +
+  theme_classic()
+
+# DODGE (agrupadas): barras lado a lado (útil para comparar categorías)
+ggplot(df, aes(x = categoria, fill = tipo)) +
+geom_bar(position = position_dodge(width = 0.8)) +
+theme_classic()
+
+# FILL (proporciones): normaliza a 100% (útil para ver proporciones, no valores absolutos)
+ggplot(df, aes(x = team, y = total, fill = type)) +
+geom_bar(stat = "identity", position = "fill") +
+scale_y_continuous(labels = scales::percent) +
+theme_classic()
+```
+
+### Barras horizontales con coord_flip
+
+```{r}
+# coord_flip: gira el gráfico 90° (útil cuando etiquetas del eje X son muy largas)
+ggplot(df, aes(x=categoria, y=valor, fill=tipo)) +
+  geom_bar(stat='identity', position='dodge') + # stat='identity': usa valores directos (no cuenta)
+  coord_flip() +  # Gira 90° (horizontal)
+  theme_classic()
+```
+
+### Heatmap básico
+
+```{r}
+# Heatmap: matriz de colores (útil para correlaciones, tablas de contingencia)
+# 'fill' es CONTINUO para intensidad.
+ggplot(df, aes(x=var1, y=var2, fill=valor)) +
+  geom_tile(colour='black') +  # colour='black' añade bordes
+  scale_fill_viridis_c() +     # Escala de color continua
+  theme_minimal() +
+  theme(axis.text.x=element_text(angle=45, hjust=0.9)) # Rotar etiquetas X para legibilidad
+```
+
+### Heatmap robusto (año × categoría) con viridis + aspect fijo
+
+```{r}
+library(ggplot2)
+library(viridis)
+
+ggplot(df, aes(x = categoria, y = as.factor(anio), fill = valor)) +
+  geom_tile() +
+  coord_fixed() +  # cuadrícula no deformada
+  scale_fill_viridis(option = "inferno", direction = 1) +
+  theme_minimal() +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle = 55, hjust = 1))
+
+```
+
+### Density plot
+
+```{r}
+# Density: como histograma pero SUAVIZADO (distribución continua)
+# Para comparar densidades por categoría (categórica → discreta, numérica → continua).
+ggplot(df, aes(x=columna, fill=categoria, colour=categoria)) +
+  geom_density(alpha=0.4, size=0.8) +  # alpha controla transparencia
+  scale_fill_manual(values=c('red', 'blue')) +
+  scale_color_manual(values=c('darkred', 'darkblue')) +
+  theme_classic()
+```
+
+### Histograma
+
+```{r}
+# Histograma: agrupa valores en bins (intervalos) y cuenta frecuencia
+ggplot(df, aes(x=columna)) +
+  geom_histogram(bins=30, fill="steelblue", color="white") +  # bins controla número de barras
+  theme_classic()
+```
+
+### Volcano plot (plantilla genérica con FDR)
+
+```{r}
+# Entradas: vector de p-values crudos y de log2 Fold Change (fc)
+volcano_df <- function(pvals, fc, fdr_cut = 0.05, lfc_cut = 1){
+  padj <- p.adjust(pvals, method = "BH") # COMPROBAR SI NO SE HA HECHO ANTES
+  data.frame(
+    fc = fc,
+    neglog10p = -log10(padj),
+    sig = factor(ifelse(padj < fdr_cut & fc >  lfc_cut,  "Up",
+                 ifelse(padj < fdr_cut & fc < -lfc_cut, "Down","NS")),
+                 levels = c("Down","NS","Up"))
+  )
+}
+
+# Plot genérico
+plot_volcano <- function(df, title="Volcano plot"){
+  ggplot(df, aes(fc, neglog10p, colour = sig)) +
+    geom_point(alpha = 0.8, size = 2.5) +
+    scale_color_manual(values = c("Down"="#3B4CC0","NS"="#7F7F7F","Up"="#B40426")) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+    geom_vline(xintercept = c(-1,1), linetype = "dashed") +
+    labs(x = expression(Log[2]*" Fold Change"),
+         y = expression("-"*Log[10]*" Adjusted "*italic(P)),
+         colour = NULL, title = title) +
+    theme_classic()
+}
+
+```
+
+## 2.3 PERSONALIZACIÓN GGPLOT
+
+### Facets (múltiples subgráficos)
+
+```{r}
+# facet_wrap: panel de subgráficos en cuadrícula flexible
+ggplot(data, aes(x, y, color = clase)) +
+  geom_point() +
+  facet_wrap(~ clase, nrow = 3) # ~ clase: divide por 'clase'
+
+# facet_grid: cuadrícula fija (filas y columnas específicas)
+ggplot(data, aes(x, y)) +
+  geom_point() +
+  facet_grid(fila ~ columna) # fila determina filas, columna determina columnas
+```
+
+### Temas
+
+```{r}
+theme_classic()   # Fondo blanco, ejes negros (clásico)
+theme_minimal()   # Minimalista (sin bordes)
+theme_bw()        # Blanco y negro con rejilla gris
+theme_dark()      # Fondo oscuro
+```
+
+### Modificar tema
+
+```{r}
+theme(
+  plot.title = element_text(hjust = 0.5, size = 14, face = "bold", margin = margin(b = 10)),    # hjust=0.5: centrado
+  axis.title.x = element_text(size = 12),
+  axis.title.y = element_text(size = 12),
+  axis.text.x = element_text(size = 10, angle = 45, hjust = 0.9),  # angle: rotar etiquetas
+  axis.text.y = element_text(size = 10),
+  legend.position = "bottom",  # "none", "top", "right", "left"
+  legend.title = element_blank(),  # Quitar título de leyenda
+  panel.grid.major = element_blank(), # Quitar líneas de rejilla principales
+  panel.grid.minor = element_blank(), # Quitar líneas de rejilla secundarias
+  panel.background = element_rect(colour = "black", size = 1)  # Borde negro alrededor
+)
+```
+
+### Colores personalizados
+
+```{r}
+scale_color_manual(values = c('red', 'blue', 'green'))  # Colores para puntos/líneas
+scale_fill_manual(values = c('red', 'blue', 'green'))   # Colores para relleno (barras, boxplots)
+scale_fill_viridis(discrete = TRUE)   # Paleta viridis para variables categóricas
+scale_fill_gradient(low = "red", high = "blue")  # Gradiente para variables continuas
+```
+
+### Etiquetas y títulos
+
+```{r}
+labs(
+  title = "Título principal",
+  subtitle = "Subtítulo",
+  x = "Eje X",
+  y = "Eje Y",
+  fill = "Leyenda"  # Cambia título de leyenda
+)
+
+# Alternativas rápidas
+xlab("Eje X")
+ylab("Eje Y")
+ggtitle("Título")
+```
+
+### Guardar figura
+
+```{r}
+# Guarda el último gráfico generado
+ggsave(filename = "output/figura.png", height = 10, width = 10, units = "cm", dpi = 500)
+```
+
+## 2.4 TESTS DE HIPÓTESIS
+
+### DISTRIBUCIÓN NORMAL EN R: rnorm, dnorm, pnorm, qnorm y muestreo
+
+```{r}
+rnorm(n, mean = 0, sd = 1)   #-> genera n valores ~ N(mean, sd^2)
+dnorm(x, mean = 0, sd = 1)   #-> densidad f(x)
+pnorm(q, mean = 0, sd = 1)   #-> F(q) = P(X <= q) (probabilidad acumulada)
+qnorm(p, mean = 0, sd = 1)   #-> cuantil x tal que P(X <= x) = p (inversa de pnorm)
+```
+
+### Shapiro-Wilk test (normalidad)
+
+```{r}
+shapiro.test(x)
+
+# Para muestras grandes (máx 5000) p < 0,05: los datos no siguen una distribución normal
+shapiro.test(sample(x, size = min(5000, length(x))))
+```
+
+### F-test (igualdad de varianzas)
+
+```{r}
+var.test(x, y, alternative = 'two.sided') # ¿Las varianzas de x e y son iguales? p < 0,05: las varianzas son significativamente diferentes
+```
+
+### T-test
+
+```{r}
+# Una muestra vs media 0
+t.test(x)
+
+# Dos muestras independientes
+t.test(x, y, alternative = "two.sided")  # dos colas
+t.test(x, y, alternative = "greater")    # x > y
+t.test(x, y, alternative = "less")       # x < y
+
+# Dos muestras pareadas
+t.test(x, y, paired = TRUE)
+
+t.test(x, y)[3] # <- para obtener pvalue
+# p < 0,05: hay diferencia significativa entre las medias
+```
+
+### Wilcoxon test (t.test no paramétrico)
+
+```{r}
+# Tests
+t.test(x, y)                      # comparación de medias
+wilcox.test(x, y, exact = FALSE)  # comparación de medianas (no-paramétrico)
+```
+
+### Bartlett test (homogeneidad de varianzas)
+
+```{r}
+valores <- c(x, y, z)
+g <- as.factor(c(rep('g1', length(x)), rep('g2', length(y)), rep('g3', length(z))))  # Etiquetas de grupo p < 0,05: las varianzas no son homogéneas (violación del supuesto de homocedasticidad).
+bartlett.test(valores, g, alternative = 'two.sided')
+```
+
+### ANOVA (comparar 3+ grupos)
+
+```{r}
+# ¿Al menos UNA media es diferente? (no dice cuál) p < 0,05: al menos una media de grupo difiere significativamente de las demás.
+# Datos combinados
+z <- c(x, y, z)
+
+# Método 1: usando as.factor() + rep()
+g <- as.factor(c(rep('g1', 20), rep('g2', 20), rep('g3', 20))) # las etiquetas tienen que ser factores
+
+# Método 2: usando gl() (genera los niveles automáticamente)
+# gl(k = nº de grupos, n = observaciones por grupo, total = k*n, labels = nombres de grupos)
+g <- gl(3, 20, 3*20, labels = c('g1', 'g2', 'g3')) # genera los factores automaticamente
+
+model <- aov(z ~ g)
+anova(model)
+summary(model) # Muestra tabla ANOVA con p-value
+
+# O desde data.frame
+model <- aov(columna_valores ~ columna_grupos, data = data)
+summary(model) # Muestra tabla ANOVA con p-value
+```
+
+### Two-way ANOVA (dos factores)
+
+```{r}
+
+# Compara el efecto de dos factores sobre una variable continua
+# Prueba:
+#  - Efecto principal de A (promediando B)
+#  - Efecto principal de B (promediando A)
+#  - Interacción A:B (¿el efecto de A depende de B?)
+
+# REGLA PRÁCTICA:
+# - Si ambos factores te interesan científicamente  → usa A * B   (incluye interacción)
+# - Si uno solo controla variabilidad (bloqueo)    → usa A + B   (sin interacción)
+
+# Generar factores
+A <- gl(length(niveles_A), length(niveles_B) * n_por_celda, N, labels = niveles_A)
+B <- gl(length(niveles_B), n_por_celda,                       N, labels = niveles_B)
+
+
+y <- rnorm(120, mean = 5, sd = 1)                 # Respuesta simulada
+data <- data.frame(A, B, y)
+
+# Modelo factorial completo (interacción)
+model_full <- aov(y ~ A * B, data = data)
+summary(model_full)
+
+# Modelo con bloqueo (sin interacción)
+model_block <- aov(y ~ A + B, data = data)
+summary(model_block)
+
+# Modelo sin bloqueo (sin interacción)
+model_no_block <- aov(y ~ A, data = data)
+summary(model_no_block)
+
+# Gráfico de interacción (líneas paralelas ≈ sin interacción)
+interaction.plot(data$B, data$A, data$y)
+
+
+```
+
+### Kruskal-Wallis test (no paramétrico, 3+ grupos)
+
+```{r}
+# Alternativa a ANOVA cuando hay outliers o datos NO normales p < 0,05: al menos una media de grupo difiere significativamente de las demás.
+z <- c(x, y, z)
+g <- as.factor(c(rep('g1', 20), rep('g2', 20), rep('g3', 20)))
+kruskal.test(z ~ g)
+```
+
+### Fisher test (tablas 2x2, mejor para muestras pequeñas)
+
+```{r}
+# Más preciso que chi-cuadrado cuando n < 80 o 20% de valores esperados < 5 p < 0,05: existe asociación significativa entre las dos variables categóricas.
+# Primero hay que construir los valores de a,b,c,d desde el dataframe para construir el contingency table.
+ct <- matrix(c(a, b, c, d), nrow = 2, ncol = 2, byrow = TRUE)
+rownames(ct) <- c('Fila1', 'Fila2')
+colnames(ct) <- c('Col1', 'Col2')
+fisher.test(ct, alternative = "greater")
+```
+
+### Chi-cuadrado test (dependencia entre categóricas)
+
+```{r}
+# Tabla de contingencia p < 0,05: las variables no son independientes (hay asociación significativa).
+# Primero hay que construir los valores de a,b,c,d... desde el dataframe para construir el contingency table.
+ct <- matrix(c(a, b, c, d), nrow = 2, ncol = 2, byrow = TRUE)
+rownames(ct) <- c('Fila1', 'Fila2')
+colnames(ct) <- c('Col1', 'Col2')
+
+chisq.test(ct)
+```
+
+### Binomial test
+
+```{r}
+# ¿La proporción observada es diferente de la esperada? p < 0,05: la proporción observada difiere significativamente de la esperada bajo la hipótesis nula.
+binom.test(8, 10, 0.5, alternative = 'greater')
+```
+
+### Permutation test
+
+```{r}
+# Test no paramétrico: simula distribución nula permutando datos
+grupo_A <- rnorm(20, mean = 50, sd = 10)
+grupo_B <- rnorm(25, mean = 55, sd = 10)
+diferencia_observada <- mean(grupo_B) - mean(grupo_A) # Diferencia real
+
+datos_combinados <- c(grupo_A, grupo_B)
+n_A <- length(grupo_A)
+n_B <- length(grupo_B)
+n_permutaciones <- 10000
+
+diferencias_simuladas <- numeric(n_permutaciones)
+for (i in 1:n_permutaciones) {
+  datos_permutados <- sample(datos_combinados) # Mezclar aleatoriamente
+  grupo_A_sim <- datos_permutados[1:n_A]
+  grupo_B_sim <- datos_permutados[(n_A + 1):(n_A + n_B)]
+  diferencias_simuladas[i] <- mean(grupo_B_sim) - mean(grupo_A_sim)
+}
+
+# p-value: ¿cuántas veces la permutación dio diferencia ≥ observada?
+valor_p <- sum(abs(diferencias_simuladas) >= abs(diferencia_observada)) / n_permutaciones
+```
+
+### Bootstrap (intervalos de confianza)
+
+```{r}
+# Remuestreo con reemplazo para estimar distribución de un estadístico
+x <- rnorm(100, mean = 5, sd = 2)
+medias_bootstrap <- numeric(10000)
+
+for(i in 1:10000) {
+  medias_bootstrap[i] <- mean(sample(x, size = 100, replace = TRUE)) # replace=TRUE: con reemplazo
+}
+
+hist(medias_bootstrap, 50) # Distribución de la media
+quantile(medias_bootstrap, c(0.025, 0.975))  # Intervalo de confianza 95%
+```
+
+### Calculo de p-value para tests bajo una distribución normal estándar
+
+```{r}
+# Si la distribucion de H0 es una N(0,1):
+
+# Test una cola hacia la derecha
+p <- 1 - pnorm(x)
+
+# Test una cola hacia la izquierda
+p <- pnorm(x)
+
+# Test dos colas
+p <- 2 * (1 - pnorm(abs(x)))
+
+
+# En teoría, el error Tipo I (α) es la probabilidad de rechazar H0 siendo cierta,
+# y el error Tipo II (β) es la probabilidad de no rechazar H0 siendo falsa.
+# Ambos pueden estimarse empíricamente mediante simulación, contando la proporción
+# de falsos positivos (rechazar H0 equivocadamente) (α) y 
+# falsos negativos (β) (aceptar H1 equivocadamente) obtenidos al comparar los p-values con el nivel α.
+# Pero para ello, debemos saber si los datos en realidad cumplen H0 o H1 de antemano.
+
+```
+
+### Corrección de múltiples pruebas
+
+```{r}
+# PROBLEMA: si haces 100 tests, ~5 darán p<0.05 por AZAR (falsos positivos)
+# 
+# CUÁNDO APLICAR:
+# 1. Mismo test repetido múltiples veces (100 t-tests)
+# 2. Múltiples tests sobre el MISMO outcome (37 predictores → SalePrice)
+# 3. Cualquier situación con múltiples p-values generados
+
+# Generar p-values (ej: 10000 t-tests sobre H0 verdadera)
+p_values <- numeric(10000)
+for(i in 1:10000) {
+  x <- rnorm(20)
+  y <- rnorm(20)
+  p_values[i] <- t.test(x, y)$p.value
+}
+
+# MÉTODOS DE CORRECCIÓN (de menos a más estricto):
+p_adjusted_bh <- p.adjust(p_values, method = "BH")         # Benjamini-Hochberg (RECOMENDADO)
+p_adjusted_fdr <- p.adjust(p_values, method = "fdr")       # FDR == BH (mismo resultado)
+p_adjusted_holm <- p.adjust(p_values, method = "holm")     # Intermedio (más estricto que BH)
+p_adjusted_bonf <- p.adjust(p_values, method = "bonferroni") # MUY estricto (pocos falsos positivos)
+```
+
+------------------------------------------------------------------------
+
+# TEMA 3: DISEÑO EXPERIMENTAL Y POTENCIA
+
+## Librerías necesarias
+
+```{r}
+library(pwr) # Cálculos de potencia y tamaño muestral
+library(FrF2) # Diseños factoriales fraccionarios
+```
+
+## 3.1 CONCEPTOS BÁSICOS
+
+**Parámetros de potencia:**
+
+\- **N**: tamaño muestral (cuántas observaciones necesito)
+
+\- **d**: efecto (Cohen's d = diferencia estandarizada)
+
+\- **alpha**: nivel de significancia (probabilidad de error tipo I, típicamente 0.05)
+
+\- **power**: potencia (probabilidad de detectar efecto si existe, típicamente 0.80)
+
+## 3.2 CÁLCULO DE TAMAÑO MUESTRAL
+
+### T-test (dos muestras)
+
+```{r}
+# Datos conocidos
+mu0 <- 0          # Media del grupo control
+mu1 <- 3          # Media del grupo tratamiento
+sigma <- 10       # Desviación estándar (asumida igual en ambos grupos)
+alpha <- 0.05
+beta <- 0.2       # beta = 1 - power (probabilidad error tipo II)
+
+# Effect size (d de Cohen): diferencia estandarizada
+d <- abs(mu1 - mu0) / sigma
+
+# Método manual
+zalpha <- abs(qnorm(alpha/2)) # Valor crítico Z para alpha (Si es a una cola, NO dividir alpha)
+zbeta <- abs(qnorm(beta))     # Valor crítico Z para beta
+N <- 4 * ((zalpha + zbeta)^2) / d^2   # N total (ambos grupos)
+
+# MÉTODO 2: pwr package (más preciso)
+library(pwr)
+result <- pwr.t.test(d = d, sig.level = alpha, power = 1 - beta, 
+                     type = "two.sample", alternative = "two.sided")
+N_pwr <- 2 * result$n  # result$n es por grupo, multiplicar por 2 para total
+```
+
+### ANOVA (Enconotrar N minima para que el test tenga suficiente power para encontrar diferencias)
+
+```{r}
+# Un factor por cada variable categorica
+# Un nivel por cada valor que pueda tomar ese factor
+
+# ¿Cuántas muestras por grupo para comparar 3+ grupos?
+mu <- c(0.8, 1.0, 1.1)  # Medias de cada grupo
+sigma <- 1              # Desviación estándar común
+k <- 3                  # Número de grupos
+
+# Effect size f (para ANOVA)
+grand_mean <- mean(mu)  # Media global
+sigma_m <- sqrt(mean((mu - grand_mean)^2)) # SD entre medias
+f <- sigma_m / sigma # f de Cohen
+
+# # Calcular N por grupo usando pwr
+result <- pwr.anova.test(k = k, f = f, sig.level = 0.05, power = 0.80)
+n_por_grupo <- result$n
+```
+
+### Correlación
+
+```{r}
+# ¿Cuántas observaciones necesito para detectar correlación r = -0.5?
+result <- pwr.r.test(r = -0.5, power = 0.80, sig.level = 0.05, 
+                     alternative = "less") # "less" porque r es negativo
+```
+
+## 3.3 SIMULACIÓN DE POTENCIA
+
+### Screen scratch detection
+
+```{r}
+# Parámetros
+mu0 <- 0        # Media bajo H0 (sin efecto)
+mu1 <- 0.7      # Media bajo H1 (con efecto)
+sigma <- 1      # Desviación estándar
+n <- 9      
+alpha <- 0.05   
+
+# Z crítico (valor que separa rechazo/no rechazo)
+z_alpha <- qnorm(1 - alpha)
+
+# Punto de corte en escala original
+x_alpha <- mu0 + z_alpha * sigma / sqrt(n)
+  
+# Beta (error tipo II): probabilidad de NO detectar efecto cuando existe
+delta <- (mu1 - mu0) * sqrt(n) / sigma  # Efecto estandarizado
+beta <- pnorm(z_alpha - delta)
+power <- 1 - beta # Potencia: probabilidad de SÍ detectar efecto
+
+# PPV (Positive Predictive Value): si test es positivo, ¿cuál es prob. de efecto real?
+penetrance <- 0.01   # Prevalencia del efecto en población (probabilidad a priori de que H1 sea cierta)
+PPV <- (1 - beta) * penetrance / ((1 - beta) * penetrance + alpha * (1 - penetrance))
+```
+
+## 3.4 DISEÑO FACTORIAL 2\^k
+
+### Crear diseño factorial
+
+```{r}
+library(FrF2)
+
+# Respuesta: variable que medimos (outcome)
+y <- c(59, 74, 50, 69, 50, 81, 46, 79,
+       61, 70, 58, 67, 54, 85, 44, 81)
+
+# Diseño 2^3: 3 factores, cada uno con 2 niveles (-1 y +1)
+# 2 replicaciones: cada combinación se repite 2 veces
+design <- FrF2(nruns = 8, nfactors = 3, replications = 2, randomize = FALSE) # nruns es niveles^(factores-frac) | nfactors es el numero de factores | replications el numero de replicaciones (1 por defecto)
+design <- add.response(design, y)
+
+# Modelo lineal con interacciones hasta grado 3
+# degree = 1 → Solo efectos principales (main effects)
+# degree = 2 → Efectos principales + interacciones dobles (A×B, A×C, …)
+# degree = 3 → Efectos principales + interacciones dobles y triples (A×B×C, …)
+model <- lm(design, degree = 3)
+summary(model)
+```
+
+### Diseño de resolución especificada
+
+```{r}
+# Resolution V: sin aliasing entre main effects e interacciones de 2 factores
+design <- FrF2(nruns = 16,       # Número de corridas (experimentos) 
+               nfactors = 5,     # Número de factores
+               resolution = 5,   # Resolution V (alta calidad)
+               replications = 3, # Repetir cada combinación 3 veces
+               randomize = FALSE)
+
+# Si no se specifica nruns, y resolution es especificado, la funcion encuentra el diseño mínimo para cumplir lo pedido.
+design <- FrF2(nfactors = 5,     # Número de factores
+               resolution = 5,   # Resolution V (alta calidad)
+               replications = 3, # Repetir cada combinación 3 veces
+               randomize = FALSE)
+
+design.info(design)$nruns #nruns
+
+# Main Effects Plot: visualizar efecto de cada factor
+MEPlot(model)
+```
+
+------------------------------------------------------------------------
+
+# TEMA 4: REGRESIÓN LINEAL Y PCA
+
+## Librerías necesarias
+
+```{r}
+library(ggplot2)  # Gráficos
+library(dplyr)    # Manipulación de datos
+library(broom)    # Ordenar resultados de modelos (tidy, glance, augment)
+library(lmtest)   # Tests para modelos lineales (Breusch-Pagan)
+library(car)      # Tests adicionales (VIF, etc)
+```
+
+## 4.1 REGRESIÓN LINEAL SIMPLE
+
+### Correlación de Pearson y Spearman
+
+```{r}
+# PEARSON: mide relación LINEAL entre dos variables continuas
+# Rango: -1 (relación negativa perfecta) a +1 (relación positiva perfecta)
+# Sensible a OUTLIERS
+pearson <- cor(data$x, data$y, method = "pearson")
+
+# SPEARMAN: mide relación MONOTÓNICA (lineal o no lineal)
+# Usa RANGOS en lugar de valores brutos → menos sensible a outliers
+# Mejor para datos no normales o asimétricos
+spearman <- cor(data$x, data$y, method = "spearman")
+
+# Test de significancia (¿la correlación es significativa?)
+# p < 0.05 → correlación significativa
+cor.test(data$x, data$y, method = "pearson")   # Devuelve r, p-value, intervalo de confianza
+cor.test(data$x, data$y, method = "spearman")  # Devuelve ρ (rho), p-value
+
+```
+
+### Ajustar modelo
+
+```{r}
+m <- lm(y ~ x, data = data) # y = α + β*x + ε (línea recta)
+summary(m) # Ver R², p-values, coeficientes (por cada unidad de tal, sube tal, o que sea fumador, aumenta tal)
+
+# Extraer coeficientes
+alpha <- summary(m)$coefficients[1, 1]  # Intercept (ordenada en origen)
+beta <- summary(m)$coefficients[2, 1]   # pendiente
+
+# Predicciones
+y_pred <- predict(m, type = "response")
+
+# Residuos: diferencia entre valor real y predicho (y - ŷ)
+residuos <- residuals(m)
+```
+
+### Visualizar
+
+```{r}
+ggplot(data, aes(x, y)) +
+  geom_point(alpha = 0.5) + # Puntos observados
+  geom_smooth(method = "lm", se = TRUE, color = "red") + # Puntos observados
+  theme_minimal()
+```
+
+### Asumir linealidad (residuos vs fitted)
+
+```{r}
+# Gráfico diagnóstico: residuos deben estar ALEATORIAMENTE alrededor de 0
+df_mod <- augment(m) # Añade columnas .fitted, .resid, etc. m es el modelo creado anteriormente
+
+
+# Si ves PATRÓN (curva, embudo) → modelo NO lineal o varianza NO constante
+ggplot(df_mod, aes(.fitted, .resid)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "red") +
+  geom_point(alpha = 0.6) +
+  labs(title = "Residuals vs Fitted", x = "Fitted values", y = "Residuals") +
+  theme_minimal()
+```
+
+### Test de homogeneidad de varianzas (Breusch-Pagan)
+
+```{r}
+library(lmtest)
+
+# H0: varianza de residuos es constante (homocedasticidad)
+bptest(m)  # p > 0.05 → varianzas homogéneas (BUENO)
+```
+
+### Test de normalidad (Shapiro-Wilk)
+
+```{r}
+shapiro.test(sample(residuals(m), size = min(5000, length(residuals(m)))))
+```
+
+### Transformaciones de variables (log, sqrt, etc.)
+
+```{r}
+# CUÁNDO: cuando la relación NO es lineal, datos muy asimétricos, varianza NO constante
+# QUÉ HACE: transforma la escala para que la relación sea más lineal y cumpla supuestos
+
+# Transformación logarítmica (base 2, 10 o natural)
+data$y_log2 <- log2(data$y)    # Base 2: reduce varianza, especialmente útil para datos que varían por órdenes de magnitud
+
+# Transformación raíz cuadrada (datos menos asimétricos que log)
+data$y_sqrt <- sqrt(data$y)
+
+# Efecto práctico: después de transformar, ajustar modelo con variables transformadas
+m <- lm(y_log2 ~ x, data = data)  # Ahora el modelo es lineal en escala logarítmica
+
+# IMPORTANTE: al transformar Y (outcome), los coeficientes cambian de interpretación
+# Si usas log2(y), necesitas anti-transformar para predicciones: y_pred <- 2^predict(m)
+```
+
+## 4.2 REGRESIÓN LINEAL MÚLTIPLE
+
+### Comparar modelos
+
+```{r}
+m1 <- lm(y ~ x1, data = data) # data es el df
+m2 <- lm(y ~ x1 + x2, data = data)
+m3 <- lm(y ~ x1 + x2 + x3, data = data)
+
+# Comparar R² ajustado para medir qué tan bien explica un modelo los datos (penaliza por número de variables)
+glance(m1)$adj.r.squared
+glance(m2)$adj.r.squared
+glance(m3)$adj.r.squared
+
+# Mejor modelo tiene mayor adj.r.squared
+
+#R2=1 → El modelo explica toda la variabilidad de los datos (ajuste perfecto).
+
+#R2=0 → El modelo no explica nada (predice igual que la media de los datos).
+
+```
+
+### Regresiones univariadas rápidas
+
+```{r}
+library(broom)
+
+# Correr MUCHAS regresiones (una por cada predictor) rápidamente
+outcome <- "SalePrice"
+predictors <- c("col1", "col2", "col3", "col4")
+num_vars <- data %>% select(all_of(c(outcome, predictors))) %>% drop_na()
+
+results_list <- list()
+
+# Loop: una regresión por predictor
+for (var in predictors) {
+  form <- as.formula(paste(outcome, "~", var)) # Crear fórmula: SalePrice ~ col1
+  m <- lm(form, data = num_vars)
+  tmp <- tidy(m) # Convertir resultados a data.frame
+  tmp <- tmp[tmp$term != "(Intercept)", ]  # Quitar intercept
+  tmp$predictor <- var
+  results_list[[var]] <- tmp
+}
+
+# Combinar resultados y corregir por múltiples pruebas
+results <- bind_rows(results_list) %>%
+  mutate(p_adj_fdr = p.adjust(p.value, method = "fdr"),
+         neglog10p = -log10(p.value), # -log10(p) para visualización
+         significant = p_adj_fdr < 0.05) %>%
+  arrange(p_adj_fdr) # Ordenar por p ajustado
+
+# Visualizar
+ggplot(results, aes(x = reorder(predictor, neglog10p), y = neglog10p, fill = significant)) +
+  geom_col() +
+  coord_flip() +  # Barras horizontales
+  geom_hline(yintercept = -log10(0.05), color = "red", linetype = "dashed") +  # Línea en p=0.05
+  scale_fill_manual(values = c("gray70", "steelblue")) +
+  theme_minimal()
+```
+
+## 4.3 VISUALIZAR EXPLAINED vs UNEXPLAINED
+
+```{r}
+# Gráfico que muestra: varianza explicada (línea roja) vs NO explicada (líneas grises)
+df_mod <- augment(m)
+
+set.seed(1)
+samp <- df_mod %>% slice_sample(n = 80) # Muestra de 80 puntos (para legibilidad)
+
+ggplot(samp, aes(x, y)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +  # Línea de regresión
+  geom_segment(aes(xend = x, y = .fitted, yend = y), # Líneas desde predicho a observado
+               color = "gray40", alpha = 0.7) +
+  labs(title = "Explained (ŷ = Xβ) + Unexplained (ε)",
+       subtitle = "Red = regression line, Gray = residuals") +
+  theme_minimal()
+```
+
+## 4.4 PRINCIPAL COMPONENT ANALYSIS (PCA)
+
+### Ejecutar PCA
+
+```{r}
+# PCA: reduce dimensionalidad manteniendo máxima varianza
+
+# scale=TRUE: estandarizar variables
+# scale=TRUE si -> Escalas o rangos diferentes
+#               -> Distintas unidades o magnitudes (e.g., “cm”, “kg”, “%”)
+#               -> Mismo rango pero varianzas muy distintas
+pca_resultado <- prcomp(datos[,col1:col10], scale = TRUE, center = TRUE, retx = TRUE) # center es TRUE por defecto
+
+# Componentes principales (scores): nuevas coordenadas de cada observación
+pcs <- pca_resultado$x
+
+# Eigenvectores (loadings): peso de cada variable original en cada PC
+loadings <- pca_resultado$rotation
+
+# Eigenvalues (varianza explicada por cada PC)
+sdev <- pca_resultado$sdev
+var_exp <- sdev^2 / sum(sdev^2) # Proporción de varianza explicada
+
+# ¿Cuánta varianza explican PC1 y PC2?
+sum(var_exp[1:2])
+
+# Para ver que variables son las que más influyen en el eje PC1
+sort(abs(pca_resultado$rotation[, "PC1"]), decreasing = TRUE)[1:5]
+
+# Para saber si estan mas relacionados con una etiqueta o con otra, comprobar las variables
+# que logramos con el comando anterior de esta forma:
+pca_resultado$rotation[c("ltgt", "call", "free", "happy", "mobile"), "PC1"]
+```
+
+### Visualizar en 2D
+
+```{r}
+# Proyectar datos en primeras 2 componentes principales
+data_pca <- data.frame(PC1 = pca_resultado$x[, 1], 
+                       PC2 = pca_resultado$x[, 2],
+                       clase = datos_originales$clase) # clase es la columna que dice el tipo o la 'etiqueta'
+
+ggplot(data_pca, aes(PC1, PC2, color = clase)) + 
+  geom_point(size = 3, alpha = 0.7) +
+  theme_minimal() +
+  ggtitle("PCA - Componentes principales 1 y 2")
+```
+
+### Identificar variables importantes en cada PC
+
+```{r}
+# PC1: cuál es la variable más importante
+idx <- which.max(abs(pca_resultado$rotation[, 1])) # abs: valor absoluto (signo no importa)
+colnames(datos)[idx]
+
+# Top 5 variables que más contribuyen a PC1
+sort(abs(pca_resultado$rotation[, 1]), decreasing = TRUE)[1:5]
+```
+
+### Visualización 3D interactiva
+
+```{r}
+library(plotly)
+
+# Gráfico 3D con PC1, PC2, PC3
+fig <- plot_ly() %>%
+  add_markers(
+    x = pca_resultado$x[, 1], # PC1
+    y = pca_resultado$x[, 2], # PC2
+    z = pca_resultado$x[, 3], # PC3
+    marker = list(size = 4, color = "blue", opacity = 0.8)
+  )
+fig
+```
+
+------------------------------------------------------------------------
+
+# TEMA 5: REGRESIÓN LOGÍSTICA Y GLM
+
+## Librerías necesarias
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(tidyverse)
+```
+
+## 5.1 REGRESIÓN LOGÍSTICA (variables binarias)
+
+### Ajustar modelo
+
+```{r}
+# Logística: para variable binaria (0/1, Sí/No, Vive/Muere)
+glm_fit <- glm(y ~ x, data = data, family = binomial(link = "logit"))
+summary(glm_fit)
+
+# Predicciones: probabilidades entre 0 y 1
+prob_pred <- predict(glm_fit, type = "response")  # type = "response" para probabilidades
+
+# Comparar LM vs GLM (GLM es mejor para datos binarios)
+lm_fit <- lm(y ~ x, data = data)
+lm_pred <- predict(lm_fit, type = "response")
+
+# Error absoluto: GLM debería ser mejor
+sum(abs(prob_pred - data$y))
+sum(abs(lm_pred - data$y))  # típicamente mayor
+```
+
+### Visualizar
+
+```{r}
+df_plot <- data.frame(
+  x = data$x,
+  y = data$y,
+  glm_pred = prob_pred, # Curva S (sigmoide)
+  lm_pred = lm_pred     # Línea recta
+)
+
+ggplot(df_plot, aes(x, y)) +
+  geom_jitter(height = 0.05, width = 0, alpha = 0.4) +
+  geom_line(aes(y = lm_pred), color = "blue", size = 1, linetype = "dashed") +
+  geom_line(aes(y = glm_pred), color = "red", size = 1) +
+  labs(title = "Logistic vs Linear Regression",
+       subtitle = "Blue dashed = LM; Red = GLM (predicted probability)",
+       y = "Probability (0 = No, 1 = Yes)") +
+  theme_minimal()
+```
+
+## 5.2 REGRESIÓN POISSON (conteos)
+
+### Ajustar modelo
+
+```{r}
+# Poisson: para datos de conteo (0, 1, 2, 3, ...) ej: nº visitas, nº eventos
+glm_fit_poisson <- glm(y ~ x, data = data, family = poisson(link = "log"))
+summary(glm_fit_poisson)
+
+# Predicciones: conteos esperados (números positivos)
+pred_poisson <- predict(glm_fit_poisson, type = "response")
+
+# Comparar con LM
+lm_fit <- lm(y ~ x, data = data)
+lm_pred <- predict(lm_fit, type = "response")
+
+# Error: Poisson debería ser mejor
+sum(abs(pred_poisson - data$y))
+sum(abs(lm_pred - data$y))  # típicamente mayor
+```
+
+### Visualizar
+
+```{r}
+df_plot <- data.frame(
+  x = data$x,
+  y = data$y,
+  poisson_pred = pred_poisson, # Error: Poisson debería ser mejor
+  lm_pred = lm_pred            # Línea recta
+)
+
+ggplot(df_plot, aes(x, y)) +
+  geom_jitter(height = 0.05, width = 0, alpha = 0.4) +
+  geom_line(aes(y = lm_pred), color = "blue", size = 1, linetype = "dashed") +
+  geom_line(aes(y = poisson_pred), color = "red", size = 1) +
+  labs(title = "Poisson vs Linear Regression",
+       subtitle = "Blue dashed = LM; Red = GLM (counts)",
+       y = "Count") +
+  theme_minimal()
+```
+
+## 5.3 REGRESIÓN GAMMA (datos continuos positivos, asimétricos)
+
+### Ajustar modelo
+
+```{r}
+# Gamma: para valores continuos POSITIVOS con distribución asimétrica
+# Ejemplos: gastos médicos, ingresos, tiempos de espera
+glm_fit_gamma <- glm(y ~ x, data = data, family = Gamma(link = "log"))
+summary(glm_fit_gamma)
+
+# Predicciones: valores positivos
+pred_gamma <- predict(glm_fit_gamma, type = "response")
+
+# Comparar con LM
+lm_fit <- lm(y ~ x, data = data)
+lm_pred <- predict(lm_fit, type = "response")
+
+# Error: Gamma debería ser mejor para datos asimétricos
+sum(abs(pred_gamma - data$y))
+sum(abs(lm_pred - data$y))
+```
+
+### Visualizar
+
+```{r}
+df_plot <- data.frame(
+  x = data$x,
+  y = data$y,
+  gamma_pred = pred_gamma, # Curva exponencial
+  lm_pred = lm_pred        # Línea recta
+)
+
+ggplot(df_plot, aes(x, y)) +
+  geom_jitter(height = 0.05, width = 0, alpha = 0.4) +
+  geom_line(aes(y = lm_pred), color = "blue", size = 1, linetype = "dashed") +
+  geom_line(aes(y = gamma_pred), color = "red", size = 1) +
+  labs(title = "Gamma vs Linear Regression",
+       subtitle = "Blue dashed = LM; Red = GLM (log link)",
+       y = "Value") +
+  theme_minimal()
+```
+
+## 5.4 RESUMEN: ELEGIR EL MODELO CORRECTO
+
+| Tipo de variable | Familia | Link | Función |
+|----|----|----|----|
+| Continua normal | Gaussian | identity | `lm(y ~ x)` |
+| Binaria (0/1) | Binomial | logit | `glm(y ~ x, family = binomial())` |
+| Conteos (0,1,2,...) | Poisson | log | `glm(y ~ x, family = poisson())` |
+| Continua positiva asimétrica | Gamma | log | `glm(y ~ x, family = Gamma(link="log"))` |
+
+------------------------------------------------------------------------
+
+# FLUJO COMPLETO: REGRESIÓN LINEAL Y GLM
+
+Este flujo muestra cómo pasar de datos crudos a un modelo final, decidiendo entre LM y GLM según el tipo de datos y supuestos.
+
+PASO 0: CARGAR Y LIMPIAR DATOS
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(lmtest)
+
+data <- read.csv("datos.csv") %>%
+  select(predictor, outcome) %>%  # Seleccionar variables relevantes
+  drop_na()  # Eliminar NAs
+```
+
+PASO 1: EXPLORACIÓN VISUAL Y CORRELACIONES
+
+```{r}
+# Gráfico inicial: visualizar relación
+ggplot(data, aes(predictor, outcome)) +
+  geom_point(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Relación entre variables")
+
+# Calcular correlaciones (Pearson y Spearman)
+# Pearson: mide relación lineal (sensible a outliers)
+# Spearman: mide relación monotónica (menos sensible a outliers)
+cor_pearson <- cor(data$predictor, data$outcome, method = "pearson")
+cor_spearman <- cor(data$predictor, data$outcome, method = "spearman")
+
+# Test de significancia
+test_pearson <- cor.test(data$predictor, data$outcome, method = "pearson")
+test_spearman <- cor.test(data$predictor, data$outcome, method = "spearman")
+
+cat("Pearson r =", round(cor_pearson, 3), "| p-value =", round(test_pearson$p.value, 4), "\n")
+cat("Spearman ρ =", round(cor_spearman, 3), "| p-value =", round(test_spearman$p.value, 4), "\n")
+```
+
+PASO 2: DECIDIR TIPO DE MODELO (basado en tipo de Y)
+
+```{r}
+# Examinar la variable respuesta (Y)
+class(data$outcome)
+summary(data$outcome)
+hist(data$outcome, 50)
+
+# DECISIÓN DE MODELO:
+# - Si Y es continua (ej: ingresos, temperatura) y NO tiene restricciones → LM
+# - Si Y es continua positiva asimétrica (ej: gastos médicos) → GLM Gamma
+# - Si Y es binaria (0/1, Sí/No) → GLM Binomial
+# - Si Y es conteos (0, 1, 2, 3, ...) → GLM Poisson
+```
+
+PASO 3: AJUSTAR MODELO LINEAL SIMPLE
+
+```{r}
+m_simple <- lm(outcome ~ predictor, data = data)
+summary(m_simple)
+
+# Extraer información clave
+coef_predictor <- summary(m_simple)$coefficients[2, 1]  # Pendiente
+p_value <- summary(m_simple)$coefficients[2, 4]         # p-value
+r_squared <- summary(m_simple)$r.squared
+adj_r_squared <- summary(m_simple)$adj.r.squared
+
+cat("Pendiente =", round(coef_predictor, 4), "| p-value =", round(p_value, 4), "\n")
+cat("R² =", round(r_squared, 4), "| R² ajustado =", round(adj_r_squared, 4), "\n")
+```
+
+PASO 4: VERIFICAR SUPUESTOS (LM)
+
+```{r}
+# Supuesto 1: LINEALIDAD
+# Gráfico residuos vs fitted
+df_diagnostico <- augment(m_simple)
+
+ggplot(df_diagnostico, aes(.fitted, .resid)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "red") +
+  geom_point(alpha = 0.6) +
+  labs(title = "Residuos vs Valores Predichos",
+       subtitle = "Deben estar aleatoriamente alrededor de 0 (sin patrones)") +
+  theme_minimal()
+
+# Supuesto 2: HOMOCEDASTICIDAD (varianza constante)
+# Test de Breusch-Pagan
+bp_test <- bptest(m_simple)
+cat("Breusch-Pagan test:\n")
+cat("Estadístico =", round(bp_test$statistic, 4), "| p-value =", round(bp_test$p.value, 4), "\n")
+
+if (bp_test$p.value < 0.05) {
+  cat("⚠️ ALERTA: Varianza NO es constante (p < 0.05)\n")
+  cat("   Opciones: transformar Y o usar GLM\n")
+} else {
+  cat("✓ Varianza constante (homocedasticidad OK)\n")
+}
+
+# Supuesto 3: NORMALIDAD DE RESIDUOS
+shapiro_test <- shapiro.test(sample(residuals(m_simple), 
+                                     size = min(5000, length(residuals(m_simple)))))
+cat("\nShapiro-Wilk test:\n")
+cat("Estadístico =", round(shapiro_test$statistic, 4), 
+    "| p-value =", round(shapiro_test$p.value, 4), "\n")
+
+if (shapiro_test$p.value < 0.05) {
+  cat("⚠️ ALERTA: Residuos NO siguen distribución normal (p < 0.05)\n")
+  cat("   Opciones: transformar Y o usar GLM\n")
+} else {
+  cat("✓ Residuos normales (normalidad OK)\n")
+}
+```
+
+PASO 5: TRANSFORMAR VARIABLES (si necesario)
+
+```{r}
+# Si bptest o shapiro dan p < 0.05, intentar transformar
+
+# Opción 1: Transformación logarítmica
+if (all(data$outcome > 0)) {  # Solo si no hay valores negativos
+  data$outcome_log <- log(data$outcome)
+  m_log <- lm(outcome_log ~ predictor, data = data)
+  
+  # Verificar si mejora
+  bp_log <- bptest(m_log)
+  shapiro_log <- shapiro.test(sample(residuals(m_log), 
+                                      size = min(5000, length(residuals(m_log)))))
+  
+  cat("\nCon transformación LOG(Y):\n")
+  cat("Breusch-Pagan p-value:", round(bp_log$p.value, 4), "\n")
+  cat("Shapiro-Wilk p-value:", round(shapiro_log$p.value, 4), "\n")
+  
+  # Si mejora significativamente, usar m_log
+  if (bp_log$p.value > 0.05 & shapiro_log$p.value > 0.05) {
+    cat("✓ Transformación LOG mejora supuestos. Usar m_log\n")
+    m_simple <- m_log  # Actualizar modelo
+  }
+}
+```
+
+PASO 6: USAR GLM SI LM NO FUNCIONA
+
+```{r}
+# Si incluso con transformación los supuestos fallan,
+# usar Generalized Linear Model (GLM)
+
+# Ejemplo: si Y es positiva asimétrica (gastos médicos, ingresos)
+# → Usar GLM Gamma
+m_glm_gamma <- glm(outcome ~ predictor, data = data, 
+                   family = Gamma(link = "log"))
+summary(m_glm_gamma)
+
+# Ejemplo: si Y es binaria (enfermedad: 0/1)
+# → Usar GLM Binomial
+# m_glm_binomial <- glm(outcome ~ predictor, data = data, 
+#                       family = binomial(link = "logit"))
+
+# Ejemplo: si Y son conteos (visitas al hospital: 0, 1, 2, ...)
+# → Usar GLM Poisson
+# m_glm_poisson <- glm(outcome ~ predictor, data = data, 
+#                      family = poisson(link = "log"))
+```
+
+PASO 7: MODELO MÚLTIPLE (añadir más predictores)
+
+```{r}
+# Si el modelo simple explica poco (R² bajo),
+# intentar añadir más variables
+
+m_multiple <- lm(outcome ~ predictor + var2 + var3, data = data)
+
+# Comparar modelos
+cat("\nComparación de modelos:\n")
+cat("LM simple: R² ajustado =", round(glance(m_simple)$adj.r.squared, 4), "\n")
+cat("LM múltiple: R² ajustado =", round(glance(m_multiple)$adj.r.squared, 4), "\n")
+
+if (glance(m_multiple)$adj.r.squared > glance(m_simple)$adj.r.squared) {
+  cat("✓ Modelo múltiple es mejor\n")
+} else {
+  cat("Modelo simple es mejor (principio de parsimonia)\n")
+}
+```
+
+PASO 8: RESUMEN Y DECISIÓN FINAL
+
+```{r}
+cat("\n========== RESUMEN FINAL ==========\n")
+cat("Modelo seleccionado: ", if (class(m_simple)[1] == "lm") "LM" else "GLM", "\n")
+cat("Fórmula: outcome ~ predictor\n")
+cat("R² =", round(glance(m_simple)$adj.r.squared, 4), "\n")
+cat("Significancia global (p-value):", round(glance(m_simple)$p.value, 4), "\n")
+```
+
+# TEMPLATE RÁPIDO PARA EJERCICIOS
+
+## Flujo típico de un ejercicio
+
+```{r}
+# 1. CARGAR DATOS
+data <- read.csv('archivo.csv')
+# ANALIZAR COLUMNAS A CONVERTIR EN FACTORES
+
+# 2. EXPLORAR
+dim(data)           # Ver tamaño
+head(data)          # Ver primeras filas
+unique(data$columna)  # Ver categorías
+any(is.na(data))    # ¿Hay NAs?
+is.numeric(data$columna) # Es la columna numerica
+
+# 3. LIMPIAR
+data <- na.omit(data)  # Eliminar NAs
+data %>% drop_na()         # elimina filas con NA en cualquier columna
+data %>% drop_na(a)        # elimina filas con NA solo en 'a'
+
+data <- data %>% filter(!columna %in% valores_incorrectos)  # Filtrar incorrectos
+data <- data %>% distinct()  # Eliminar duplicados
+
+# 4. TRANSFORMAR (si es necesario)
+data <- data %>%
+  mutate(
+    nueva_col = ...,              # Crear columnas
+    col_factor = as.factor(col)   # Convertir a factor
+  )
+
+# 5. AGREGAR/RESUMIR
+data_resumen <- data %>%
+  group_by(categoría) %>%         # Agrupar
+  summarise(
+    media = mean(valor),          # Calcular estadísticas
+    total = sum(valor),
+    .groups = 'drop'
+  )
+
+# 6. VISUALIZAR
+ggplot(data, aes(x, y, color = categoría)) +
+  geom_point() +
+  theme_classic()
+
+# 7. TEST ESTADÍSTICO
+test_result <- t.test(grupo1, grupo2)
+test_result$p.value # Ver p-value
+```
+
+------------------------------------------------------------------------
+
+**NOTAS IMPORTANTES PARA EL EXAMEN:**
+
+1.  **Evita bucles** - usa dplyr, apply, sapply
+2.  **Verifica tipos de datos** - class(), str()
+3.  **Comprueba NA** - any(is.na(data)), na.omit()
+4.  **Limpia outliers** - usa filter(), valores únicos
+5.  **Usa pipes %\>%** - código más legible
+6.  **Corrección de múltiples pruebas** - p.adjust() con "BH"
+7.  **Visualiza siempre** - ggplot es flexible y potente
+8.  **Comenta tu código** - importante para seguimiento
