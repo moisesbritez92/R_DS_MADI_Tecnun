@@ -8,6 +8,17 @@
 library(dplyr)
 library(tidyverse)  # Incluye dplyr y otras herramientas útiles
 
+# 0. CONCEPTOS CLAVE ----
+# - Gramática de datos: dplyr usa verbos (select, filter, mutate, summarise, arrange)
+#   encadenados con %>% para expresar transformaciones de forma legible.
+# - Tibbles: data frames modernos con impresión amigable y reglas consistentes.
+# - Evaluación no estándar (NSE): puedes referirte a columnas sin comillas dentro
+#   de verbos (p. ej., select(mpg), filter(mpg > 20)).
+# - Datos agrupados: group_by() cambia el contexto; summarise/mutate operan por
+#   grupo hasta que uses ungroup().
+# - across(): permite aplicar una o varias funciones a múltiples columnas de forma
+#   vectorizada y declarativa (where(), starts_with(), matches(), etc.).
+
 # 1. FUNCIONES BÁSICAS (VERBOS PRINCIPALES) ----
 
 ## 1.1 SELECT() - Seleccionar columnas ----
@@ -786,6 +797,112 @@ mtcars %>%
       .names = "{.col}_{.fn}"
     )
   )
+
+
+# 9.7 Limpieza avanzada de NAs y strings en todo el dataset ----
+
+# Auditoría de NAs: conteo y porcentaje por columna
+auditar_na <- function(df) {
+  tibble(
+    columna = names(df),
+    n_na = sapply(df, ~ sum(is.na(.x))),
+    prop_na = round(sapply(df, ~ mean(is.na(.x))) * 100, 2)
+  ) %>% arrange(desc(prop_na))
+}
+
+# Normalizar strings: recorta, compacta espacios, convierte representaciones de NA
+# comunes ("", " ", "NA", "N/A", "na", "null", "None", "-") a NA
+normalizar_strings <- function(df) {
+  df %>% mutate(
+    across(
+      where(is.character),
+      ~ {
+        x <- .x
+        x <- stringr::str_trim(x)                 # quitar espacios extremos
+        x <- stringr::str_squish(x)               # compactar espacios múltiples
+        nx <- stringr::str_to_lower(x)            # versión minúsculas para comparar
+        # convertir marcadores habituales a NA
+        x[nx %in% c("", "na", "n/a", "null", "none", "-")] <- NA_character_
+        x
+      }
+    )
+  )
+}
+
+# Estandarizar capitalización de texto (opcional): Title Case o lower
+estandarizar_caso <- function(df, columnas = where(is.character), modo = c("title", "lower", "upper")) {
+  modo <- match.arg(modo)
+  fun <- switch(modo,
+    title = stringr::str_to_title,
+    lower = stringr::str_to_lower,
+    upper = stringr::str_to_upper
+  )
+  df %>% mutate(across({{ columnas }}, ~ ifelse(is.na(.x), .x, fun(.x))))
+}
+
+# Convertir números almacenados como texto (con símbolos o comas) a numérico
+# Nota: aplica solo a columnas de texto; evita IDs si no corresponde
+parsear_numeros_texto <- function(df, columnas = where(is.character)) {
+  df %>% mutate(
+    across({{ columnas }}, ~ {
+      # detecta si parece numérico (contiene dígitos)
+      parece_num <- stringr::str_detect(.x, "[0-9]")
+      suppressWarnings(readr::parse_number(ifelse(parece_num, .x, NA_character_)))
+    })
+  )
+}
+
+# Imputación simple de NAs: por tipo de columna
+imputar_na_simple <- function(df, valor_num = 0, valor_chr = "Desconocido", valor_lgl = FALSE) {
+  df %>% mutate(
+    across(where(is.numeric), ~ tidyr::replace_na(.x, valor_num)),
+    across(where(is.character), ~ tidyr::replace_na(.x, valor_chr)),
+    across(where(is.logical), ~ tidyr::replace_na(.x, valor_lgl))
+  )
+}
+
+# Eliminar columnas con alta proporción de NA (umbral en 0..1)
+eliminar_columnas_muy_na <- function(df, umbral = 0.9) {
+  props <- sapply(df, function(x) mean(is.na(x)))
+  df[, props <= umbral, drop = FALSE]
+}
+
+# Pipeline de limpieza genérica: strings -> NAs comunes -> tipos -> auditoría
+limpiar_dataset_generico <- function(df) {
+  df1 <- df %>% normalizar_strings()
+  # ejemplo: estandarizar nombres propios
+  df2 <- df1 %>% estandarizar_caso(where(is.character), modo = "title")
+  # ejemplo: parsear números en columnas de texto con dígitos (con cuidado)
+  df3 <- df2 %>% parsear_numeros_texto(where(is.character))
+  list(
+    datos = df3,
+    auditoria_na = auditar_na(df3)
+  )
+}
+
+# Ejemplo de uso con un dataframe de ejemplo mixto
+df_mixto <- tibble(
+  id = c("001", "002", "003"),
+  ingreso = c("€ 1.200,50", "1200.5", "NA"),
+  ciudad = c("  madrid  ", "N/A", "barcelona"),
+  activo = c("Sí", "No", "-")
+)
+
+resultado_limpieza <- df_mixto %>%
+  normalizar_strings() %>%
+  mutate(
+    # estandarizar respuestas sí/no a lógico
+    activo = case_when(
+      stringr::str_to_lower(activo) %in% c("si", "sí", "yes", "y", "true") ~ TRUE,
+      stringr::str_to_lower(activo) %in% c("no", "n", "false") ~ FALSE,
+      TRUE ~ NA
+    )
+  ) %>%
+  # convertir ingresos a numérico respetando símbolos
+  mutate(ingreso = readr::parse_number(ingreso, locale = readr::locale(decimal_mark = ","))) %>%
+  estandarizar_caso(ciudad, modo = "title")
+
+auditar_na(resultado_limpieza)
 
 
 # 10. CONSEJOS Y MEJORES PRÁCTICAS ----
