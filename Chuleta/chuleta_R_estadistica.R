@@ -300,8 +300,49 @@ cor_test$p.value                        # P-valor
 cor_test$conf.int                       # Intervalo de confianza
 
 # 7.4 Test de Fisher (tablas de contingencia)
-# Crear tabla de contingencia
-tabla <- matrix(c(20, 10, 15, 25), nrow = 2)
+# Crear tabla de contingencia 2x2 con nombres y orden explícito:
+# Filas = grupos (p.ej., Tratamiento vs Control)
+# Columnas = resultado (p.ej., Efectos secundarios Sí vs No)
+# Los valores se pasan en orden por filas (byrow=TRUE):
+#             Sí   No
+# Tratamiento 20   10
+# Control     15   25
+tabla <- matrix(
+  c(20, 10,   # fila 1: Tratamiento
+    15, 25),  # fila 2: Control
+  nrow = 2,
+  byrow = TRUE,
+  dimnames = list(
+    Grupo = c("Tratamiento", "Control"),
+    Efectos = c("Sí", "No")
+  )
+)
+tabla
+
+# Alternativa: construir desde variables categóricas del data.frame
+# tabla <- table(data$tratamiento, data$efectos_secundarios)
+
+# Comprobar frecuencias esperadas (si varias < 5, preferir Fisher)
+chisq.test(tabla)$expected
+
+# Test de Fisher 2x2 (dirección 'greater' = odds de "Sí" mayor en la primera fila)
+fisher.test(tabla, alternative = "two.sided")
+fisher.test(tabla, alternative = "greater")  # OR > 1 para la primera fila
+
+# Tablas RxC: fisher.test también funciona (exacto), pero puede tardar
+# Ejemplo 2x3
+tabla_2x3 <- matrix(
+  c(12,  8,  5,
+    9, 11,  7),
+  nrow = 2, byrow = TRUE,
+  dimnames = list(
+    Grupo = c("Tratamiento", "Control"),
+    Respuesta = c("Alto", "Medio", "Bajo")
+  )
+)
+tabla_2x3
+fisher.test(tabla_2x3)     # Exacto para RxC
+chisq.test(tabla_2x3)      # Aproximación chi-cuadrado (útil si no hay celdas pequeñas)
 
 # Test de Fisher
 fisher.test(tabla, alternative = "greater")  # "greater", "less", "two.sided"
