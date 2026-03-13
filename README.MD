@@ -44,3 +44,5 @@ Si deseas contribuir a este repositorio, puedes hacerlo mediante:
 - Mejora de los scripts existentes.
 
 ¡Esperamos que este repositorio sea útil para tu aprendizaje y práctica de Data Science con R!
+
+MADI - 2025
