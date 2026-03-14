@@ -221,7 +221,7 @@ apply(data, 1, function(x) mean(x[!is.na(x)]))  # Media ignorando NAs
 
 ```{r}
 # sapply: versión simplificada de lapply (devuelve vector o matriz, no lista)
-# Útil para operaciones rápidas
+# Útil para operaciones rápidas y simples
 
 # Aplicar función a cada elemento de una lista o columnas de dataframe
 sapply(data, class)            # Tipo de dato de cada columna
